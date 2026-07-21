@@ -1,0 +1,20 @@
+{
+  "name": "agentmesh",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Compliant agent-to-agent settlement layer on Arc — named agent wallets, x402 micropayments, screened escrow, automated watchers.",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' build",
+    "test:contracts": "cd contracts && forge test",
+    "demo:local": "pnpm --filter @agentmesh/demo demo:local",
+    "demo:testnet": "pnpm --filter @agentmesh/demo demo:testnet",
+    "dev:dashboard": "pnpm --filter @agentmesh/dashboard dev",
+    "dev:seller": "pnpm --filter @agentmesh/seller-agent dev",
+    "dev:watcher": "pnpm --filter @agentmesh/watcher dev",
+    "mcp": "pnpm --filter @agentmesh/mcp-server start"
+  },
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
