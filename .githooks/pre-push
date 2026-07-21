@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Hard check: only the determined-001 identity may push to this repo.
+set -euo pipefail
+
+ALLOWED_NAME="determined-001"
+ALLOWED_EMAIL="241968004+determined-001@users.noreply.github.com"
+
+name="$(git config --get user.name || true)"
+email="$(git config --get user.email || true)"
+
+if [ "$name" != "$ALLOWED_NAME" ] || [ "$email" != "$ALLOWED_EMAIL" ]; then
+  echo "BLOCKED: this repo may only be pushed as git identity '$ALLOWED_NAME <$ALLOWED_EMAIL>'." >&2
+  echo "Current local identity: '$name <$email>'." >&2
+  echo "Run: git config user.name \"$ALLOWED_NAME\" && git config user.email \"$ALLOWED_EMAIL\"" >&2
+  exit 1
+fi
+
+active_gh_account="$(gh auth status 2>&1 || true)"
+active_gh_account="$(printf '%s\n' "$active_gh_account" | grep -B1 'Active account: true' | grep 'Logged in to github.com account' | awk '{print $(NF-1)}')"
+
+if [ -n "$active_gh_account" ] && [ "$active_gh_account" != "$ALLOWED_NAME" ]; then
+  echo "BLOCKED: active gh CLI account is '$active_gh_account', must be '$ALLOWED_NAME'." >&2
+  echo "Run: gh auth switch -h github.com -u $ALLOWED_NAME" >&2
+  exit 1
+fi
+
+exit 0
