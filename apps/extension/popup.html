@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">Agent<span>Mesh</span></div>
+      <span id="network" class="badge">…</span>
+    </header>
+    <div id="status" class="hint">Connecting to dashboard…</div>
+    <section>
+      <h2>Agents</h2>
+      <div id="agents" class="list"></div>
+    </section>
+    <section>
+      <h2>Escrow — needs attention</h2>
+      <div id="pending" class="list"></div>
+    </section>
+    <section>
+      <h2>Recent jobs</h2>
+      <div id="jobs" class="list"></div>
+    </section>
+    <script src="popup.js"></script>
+  </body>
+</html>
