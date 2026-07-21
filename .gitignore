@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+out/
+cache/
+broadcast/
+.env
+.env.local
+*.log
+.DS_Store
+deployments/local.json
+contracts/lib/
