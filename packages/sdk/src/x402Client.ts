@@ -70,7 +70,9 @@ export async function paidFetch(
   const req = (await first.json()) as PaymentRequirements;
   const amount = BigInt(req.maxAmountRequired);
   if (opts.maxAmount !== undefined && amount > opts.maxAmount) {
-    throw new Error(`Payment required (${amount} base units) exceeds maxAmount (${opts.maxAmount}) for ${url}`);
+    throw new Error(
+      `Payment required (${amount} base units) exceeds maxAmount (${opts.maxAmount}) for ${url}`,
+    );
   }
   if (req.asset.toLowerCase() !== mesh.deployment.usdc.toLowerCase()) {
     throw new Error(`Seller requested unknown asset ${req.asset}; expected USDC ${mesh.deployment.usdc}`);
