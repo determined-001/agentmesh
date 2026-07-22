@@ -102,8 +102,8 @@ export default function Dashboard() {
 
       {offline && (
         <div className="error-banner">
-          Chain state unavailable — start the stack with <code className="mono">pnpm demo:local</code> (or point
-          AGENTMESH_NETWORK at arc-testnet after deploying).
+          Chain state unavailable — start the stack with <code className="mono">pnpm demo:local</code> (or
+          point AGENTMESH_NETWORK at arc-testnet after deploying).
         </div>
       )}
 
