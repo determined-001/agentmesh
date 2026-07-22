@@ -23,8 +23,11 @@ export class ViemEoaWallet implements AgentWallet {
 
   constructor(privateKey: Hex, chain: Chain) {
     this.account = privateKeyToAccount(privateKey);
-    this.publicClient = createPublicClient({ chain, transport: http(), pollingInterval: 500 });
-    this.walletClient = createWalletClient({ account: this.account, chain, transport: http() });
+    // Explicit retry/timeout: transient RPC blips retry with backoff instead of
+    // surfacing to every poller tick.
+    const transport = http(undefined, { retryCount: 3, retryDelay: 300, timeout: 15_000 });
+    this.publicClient = createPublicClient({ chain, transport, pollingInterval: 500 });
+    this.walletClient = createWalletClient({ account: this.account, chain, transport });
   }
 
   async getAddress(): Promise<Address> {

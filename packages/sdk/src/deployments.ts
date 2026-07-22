@@ -4,8 +4,18 @@ import { chainFor, type Deployment, loadDeployment, type NetworkName } from "@ag
 import { AgentMeshClient } from "./client.js";
 import { type AgentWallet, walletFromEnv } from "./wallet/index.js";
 
-/** Locate `deployments/<network>.json` by walking up from cwd (monorepo root holds it). */
+/** Locate the deployment artifact. Resolution order:
+ *  1. AGENTMESH_DEPLOYMENT_JSON — explicit path (containers, CI, anywhere
+ *     outside the monorepo tree);
+ *  2. walk up from cwd looking for `deployments/<network>.json` (monorepo). */
 export function findDeploymentFile(network: NetworkName, startDir = process.cwd()): string | undefined {
+  const explicit = process.env.AGENTMESH_DEPLOYMENT_JSON;
+  if (explicit) {
+    if (!existsSync(explicit)) {
+      throw new Error(`AGENTMESH_DEPLOYMENT_JSON points to a missing file: ${explicit}`);
+    }
+    return explicit;
+  }
   let dir = startDir;
   for (let i = 0; i < 8; i++) {
     const candidate = join(dir, "deployments", `${network}.json`);
@@ -20,6 +30,7 @@ export function findDeploymentFile(network: NetworkName, startDir = process.cwd(
 export function readDeployment(network: NetworkName): Deployment {
   const file = findDeploymentFile(network);
   const fromJson = file ? (JSON.parse(readFileSync(file, "utf8")) as Partial<Deployment>) : undefined;
+  // Env vars (USDC_ADDRESS etc.) still override the JSON inside loadDeployment.
   return loadDeployment(network, fromJson);
 }
 
