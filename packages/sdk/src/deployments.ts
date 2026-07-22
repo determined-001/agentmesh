@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { chainFor, loadDeployment, type Deployment, type NetworkName } from "@agentmesh/shared";
-import { walletFromEnv, type AgentWallet } from "./wallet/index.js";
+import { chainFor, type Deployment, loadDeployment, type NetworkName } from "@agentmesh/shared";
 import { AgentMeshClient } from "./client.js";
+import { type AgentWallet, walletFromEnv } from "./wallet/index.js";
 
 /** Locate `deployments/<network>.json` by walking up from cwd (monorepo root holds it). */
 export function findDeploymentFile(network: NetworkName, startDir = process.cwd()): string | undefined {

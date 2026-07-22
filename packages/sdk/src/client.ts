@@ -1,20 +1,20 @@
 import {
-  createPublicClient,
-  http,
-  keccak256,
-  toHex,
+  agentEscrowAbi,
+  agentRegistryAbi,
+  complianceGateAbi,
+  type Deployment,
+  usdcAbi,
+} from "@agentmesh/shared";
+import {
   type Address,
   type Chain,
+  createPublicClient,
   type Hex,
+  http,
+  keccak256,
   type PublicClient,
+  toHex,
 } from "viem";
-import {
-  agentRegistryAbi,
-  agentEscrowAbi,
-  complianceGateAbi,
-  usdcAbi,
-  type Deployment,
-} from "@agentmesh/shared";
 import type { AgentWallet } from "./wallet/index.js";
 
 export interface AgentCard {
@@ -46,7 +46,7 @@ export class AgentMeshClient {
   constructor(
     readonly chain: Chain,
     readonly deployment: Deployment,
-    readonly wallet: AgentWallet
+    readonly wallet: AgentWallet,
   ) {
     this.publicClient = createPublicClient({ chain, transport: http(), pollingInterval: 500 });
   }
@@ -145,7 +145,7 @@ export class AgentMeshClient {
     const receipt = await this.wallet.waitForReceipt(txHash);
     // JobCreated(uint256 indexed jobId, ...) — jobId is topic 1 of the escrow's log
     const log = receipt.logs.find(
-      (l) => l.address.toLowerCase() === this.deployment.agentEscrow.toLowerCase()
+      (l) => l.address.toLowerCase() === this.deployment.agentEscrow.toLowerCase(),
     );
     const jobId = log ? BigInt(log.topics[1]!) : 0n;
     return { jobId, txHash };
