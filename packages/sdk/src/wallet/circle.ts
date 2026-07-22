@@ -83,4 +83,12 @@ export class CircleWallet implements AgentWallet {
   async waitForReceipt(txHash: Hex): Promise<TransactionReceipt> {
     return this.publicClient.waitForTransactionReceipt({ hash: txHash });
   }
+
+  async signMessage(message: string): Promise<Hex> {
+    const sdk = await this.sdk();
+    const res = await sdk.signMessage({ walletId: this.config.walletId, message });
+    const signature = res?.data?.signature as Hex | undefined;
+    if (!signature) throw new Error("Circle signMessage returned no signature");
+    return signature;
+  }
 }
