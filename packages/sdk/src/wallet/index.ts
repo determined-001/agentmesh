@@ -44,7 +44,9 @@ function assertDistinctRoleKeys(): void {
     if (!key) continue;
     const other = seen.get(key);
     if (other) {
-      throw new Error(`${role} and ${other} share the same private key — roles must use distinct keys off-local`);
+      throw new Error(
+        `${role} and ${other} share the same private key — roles must use distinct keys off-local`,
+      );
     }
     seen.set(key, role);
   }

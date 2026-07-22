@@ -47,7 +47,9 @@ export async function POST(req: Request) {
   try {
     const { client } = meshFromEnv("DASHBOARD_PRIVATE_KEY");
     const txHash =
-      action === "release" ? await client.releaseEscrow(BigInt(jobId)) : await client.disputeJob(BigInt(jobId));
+      action === "release"
+        ? await client.releaseEscrow(BigInt(jobId))
+        : await client.disputeJob(BigInt(jobId));
     return NextResponse.json({ ok: true, action, jobId, txHash });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
