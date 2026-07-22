@@ -11,3 +11,4 @@ broadcast/
 deployments/local.json
 contracts/lib/
 *.tsbuildinfo
+data/
