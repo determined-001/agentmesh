@@ -24,5 +24,14 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "typescript": "^5.6.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/determined-001/agentmesh.git",
+    "directory": "packages/sdk"
+  },
+  "files": [
+    "dist"
+  ]
 }
