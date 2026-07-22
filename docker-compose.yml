@@ -1,0 +1,57 @@
+# AgentMesh long-running services: seller-agent + watcher.
+# The Next.js dashboard deploys separately (e.g. Vercel); the extension is
+# packaged from apps/extension. Configure via .env (see .env.example) — at
+# minimum: AGENTMESH_NETWORK, SELLER_PRIVATE_KEY, WATCHER_PRIVATE_KEY, and
+# AGENTMESH_DEPLOYMENT_JSON pointing at the mounted artifact.
+services:
+  seller-agent:
+    build: .
+    environment:
+      SERVICE: seller-agent
+      AGENTMESH_DEPLOYMENT_JSON: /app/deployments/arc-testnet.json
+    env_file: .env
+    ports:
+      - "4021:4021"
+    volumes:
+      - seller-data:/app/apps/seller-agent/data
+      - ./deployments:/app/deployments:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:4021/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  watcher:
+    build: .
+    environment:
+      SERVICE: watcher
+      AGENTMESH_DEPLOYMENT_JSON: /app/deployments/arc-testnet.json
+    env_file: .env
+    ports:
+      - "4031:4031"
+    volumes:
+      - watcher-data:/app/apps/watcher/data
+      - ./deployments:/app/deployments:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:4031/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  seller-data:
+  watcher-data:
