@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Install libs # lib/ is gitignored; pinned to the vendored versions
+        run: forge install foundry-rs/forge-std@v1.16.2 OpenZeppelin/openzeppelin-contracts@v5.6.1 --no-git
+      - name: Format check
+        run: forge fmt --check
+      - name: Build
+        run: forge build
+      - name: Test
+        run: forge test -vv
+      - name: ABI drift gate
+        working-directory: .
+        run: node scripts/sync-abis.mjs --check
+
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm exec biome ci .
+      - name: Test
+        run: pnpm test
+
+  slither:
+    runs-on: ubuntu-latest
+    continue-on-error: true # advisory for now; tighten to blocking post contract-hardening
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Install libs # lib/ is gitignored; pinned to the vendored versions
+        run: forge install foundry-rs/forge-std@v1.16.2 OpenZeppelin/openzeppelin-contracts@v5.6.1 --no-git
+        working-directory: contracts
+      - uses: crytic/slither-action@v0.4.1
+        with:
+          target: contracts/
+          slither-args: --exclude-dependencies
+          fail-on: high
