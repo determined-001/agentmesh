@@ -1,6 +1,9 @@
+import { createServer } from "node:http";
 import { JOB_STATUS, meshFromEnv } from "@agentmesh/sdk";
 import { formatUsd } from "@agentmesh/shared";
+import { createLogger } from "@agentmesh/shared/logger";
 import { type Address, parseAbiItem } from "viem";
+import { WatcherStore } from "./store.js";
 
 /** AgentMesh watcher — the automation layer.
  *  1. Screens sellers on JobCreated and pushes verdicts to the ComplianceGate
@@ -10,7 +13,10 @@ import { type Address, parseAbiItem } from "viem";
  *  3. Refunds buyers when a deadline passes without delivery.
  *  Runs with the screener/arbiter key (WATCHER_PRIVATE_KEY). */
 
+const log = createLogger("watcher");
+
 const POLL_MS = Number(process.env.POLL_MS ?? 2000);
+const HEALTH_PORT = Number(process.env.WATCHER_HEALTH_PORT ?? 4031);
 const DENYLIST = new Set(
   (process.env.DENYLIST ?? "")
     .split(",")
@@ -21,16 +27,21 @@ const DENYLIST = new Set(
 const { client: mesh } = meshFromEnv("WATCHER_PRIVATE_KEY");
 const me = await mesh.wallet.getAddress();
 const disputeWindow = BigInt(mesh.deployment.disputeWindow);
-console.log(`[watcher] running as ${me}, dispute window ${disputeWindow}s`);
-if (process.env.CIRCLE_COMPLIANCE_API_KEY) {
-  console.log("[watcher] screening mode: Circle Compliance Engine");
-} else {
-  console.log("[watcher] screening mode: LOCAL ALLOWLIST FALLBACK (Circle Compliance Engine key not set)");
-}
+const store = new WatcherStore(process.env.WATCHER_DB ?? "data/watcher.sqlite", mesh.deployment.agentEscrow);
 
-/** Screen an address. Uses Circle Compliance Engine's address screening API when
- *  CIRCLE_COMPLIANCE_API_KEY is set; otherwise a local denylist (labeled fallback). */
-async function screen(address: Address): Promise<{ allowed: boolean; reason: string }> {
+log.info({ wallet: me, disputeWindow: Number(disputeWindow) }, "watcher starting");
+log.info(
+  process.env.CIRCLE_COMPLIANCE_API_KEY
+    ? { mode: "circle-compliance-engine" }
+    : { mode: "local-denylist-fallback" },
+  "screening mode",
+);
+
+/** Screen an address. Uses Circle Compliance Engine when configured; local
+ *  denylist otherwise. Returns null on screening-provider failure — FAIL
+ *  CLOSED: no verdict is pushed, the seller stays unscreened (default-deny on
+ *  the gate), and we retry with backoff. An outage must never allow releases. */
+async function screen(address: Address): Promise<{ allowed: boolean; reason: string } | null> {
   const apiKey = process.env.CIRCLE_COMPLIANCE_API_KEY;
   if (apiKey) {
     try {
@@ -43,18 +54,43 @@ async function screen(address: Address): Promise<{ allowed: boolean; reason: str
           chain: process.env.CIRCLE_COMPLIANCE_CHAIN ?? "ETH",
         }),
       });
-      if (res.ok) {
-        const data = (await res.json()) as { data?: { result?: string } };
-        const approved = data.data?.result === "APPROVED";
-        return { allowed: approved, reason: `circle-compliance-engine:${data.data?.result}` };
+      if (!res.ok) {
+        log.error({ address, status: res.status }, "compliance engine HTTP error — failing closed");
+        return null;
       }
-      console.error(`[watcher] Compliance Engine HTTP ${res.status}; falling back to local list`);
+      const data = (await res.json()) as { data?: { result?: string } };
+      const approved = data.data?.result === "APPROVED";
+      return { allowed: approved, reason: `circle-compliance-engine:${data.data?.result}` };
     } catch (err) {
-      console.error("[watcher] Compliance Engine error; falling back:", (err as Error).message);
+      log.error({ address, err: (err as Error).message }, "compliance engine unreachable — failing closed");
+      return null;
     }
   }
   const denied = DENYLIST.has(address.toLowerCase());
   return { allowed: !denied, reason: denied ? "local-denylist:hit" : "local-allowlist:clean" };
+}
+
+// Screening retry backoff (in-memory; retry timing need not survive restarts).
+const screenAttempts = new Map<string, { attempts: number; nextTryAt: number }>();
+
+async function screenSeller(seller: Address): Promise<void> {
+  const key = seller.toLowerCase();
+  if (store.isScreened(key)) return;
+  const backoff = screenAttempts.get(key);
+  if (backoff && Date.now() < backoff.nextTryAt) return;
+
+  const verdict = await screen(seller);
+  if (verdict === null) {
+    const attempts = (backoff?.attempts ?? 0) + 1;
+    const delay = Math.min(POLL_MS * 2 ** attempts, 300_000);
+    screenAttempts.set(key, { attempts, nextTryAt: Date.now() + delay });
+    log.warn({ seller, attempts, retryInMs: delay }, "screening failed, will retry");
+    return;
+  }
+  const tx = await mesh.setAllowed(seller, verdict.allowed, verdict.reason);
+  store.markScreened(key, verdict.allowed);
+  screenAttempts.delete(key);
+  log.info({ seller, allowed: verdict.allowed, reason: verdict.reason, tx }, "seller screened");
 }
 
 const jobCreatedEvent = parseAbiItem(
@@ -62,9 +98,8 @@ const jobCreatedEvent = parseAbiItem(
 );
 const jobDeliveredEvent = parseAbiItem("event JobDelivered(uint256 indexed jobId, bytes32 deliverableHash)");
 
-const screened = new Set<string>();
-const tracked = new Set<string>(); // job ids we may still need to act on
-let lastBlock = 0n;
+let lastBlock = store.getCursor() ?? 0n;
+let lastTickAt = 0;
 
 async function tick() {
   try {
@@ -87,61 +122,105 @@ async function tick() {
         }),
       ]);
       lastBlock = latest + 1n;
+      store.setCursor(lastBlock);
 
-      for (const log of created) {
-        const jobId = log.args.jobId!.toString();
-        const seller = log.args.seller!;
-        tracked.add(jobId);
-        console.log(`[watcher] job #${jobId} created: ${formatUsd(log.args.amount!)} for ${seller}`);
-        if (!screened.has(seller.toLowerCase())) {
-          screened.add(seller.toLowerCase());
-          const verdict = await screen(seller);
-          const tx = await mesh.setAllowed(seller, verdict.allowed, verdict.reason);
-          console.log(
-            `[watcher] screened ${seller}: ${verdict.allowed ? "ALLOWED" : "BLOCKED"} (${verdict.reason}) tx ${tx}`,
-          );
-        }
+      for (const logEntry of created) {
+        const jobId = logEntry.args.jobId?.toString();
+        const seller = logEntry.args.seller;
+        if (!jobId || !seller) continue;
+        store.track(jobId);
+        log.info({ jobId, amount: formatUsd(logEntry.args.amount ?? 0n), seller }, "job created");
       }
-      for (const log of delivered) {
-        tracked.add(log.args.jobId!.toString());
-        console.log(`[watcher] job #${log.args.jobId} delivered — dispute window open`);
+      for (const logEntry of delivered) {
+        const jobId = logEntry.args.jobId?.toString();
+        if (!jobId) continue;
+        store.track(jobId);
+        log.info({ jobId }, "job delivered — dispute window open");
       }
     }
 
-    // Act on tracked jobs.
+    // Act on tracked jobs (persisted — restarts resume exactly here).
     const now = BigInt(Math.floor(Date.now() / 1000));
-    for (const id of [...tracked]) {
+    for (const id of store.trackedJobs()) {
       const jobId = BigInt(id);
       const job = await mesh.getJob(jobId);
       const status = JOB_STATUS[job.status];
       if (status === "Released" || status === "Refunded" || status === "None") {
-        tracked.delete(id);
+        store.untrack(id);
         continue;
+      }
+      if (status === "Funded" || status === "Delivered" || status === "Disputed") {
+        await screenSeller(job.seller);
       }
       if (status === "Delivered" && now >= job.deliveredAt + disputeWindow) {
         try {
           const tx = await mesh.releaseEscrow(jobId);
-          console.log(
-            `[watcher] job #${id} AUTO-RELEASED ${formatUsd(job.amount)} → ${job.seller} (tx ${tx})`,
-          );
-          tracked.delete(id);
+          log.info({ jobId: id, amount: formatUsd(job.amount), seller: job.seller, tx }, "auto-released");
+          store.untrack(id);
         } catch (err) {
-          console.error(`[watcher] release #${id} failed:`, (err as Error).message);
+          log.error({ jobId: id, err: (err as Error).message }, "release failed");
         }
       } else if (status === "Funded" && now > job.deadline) {
         try {
           const tx = await mesh.refundJob(jobId);
-          console.log(`[watcher] job #${id} REFUNDED ${formatUsd(job.amount)} → ${job.buyer} (tx ${tx})`);
-          tracked.delete(id);
+          log.info({ jobId: id, amount: formatUsd(job.amount), buyer: job.buyer, tx }, "refunded");
+          store.untrack(id);
         } catch (err) {
-          console.error(`[watcher] refund #${id} failed:`, (err as Error).message);
+          log.error({ jobId: id, err: (err as Error).message }, "refund failed");
         }
       }
     }
   } catch (err) {
-    console.error("[watcher] tick error:", (err as Error).message);
+    log.error({ err: (err as Error).message }, "tick error");
   }
 }
 
-setInterval(tick, POLL_MS);
-console.log(`[watcher] polling every ${POLL_MS}ms`);
+// Self-scheduling loop — a slow tick can never overlap the next one.
+let stopping = false;
+let timer: NodeJS.Timeout | undefined;
+async function loop() {
+  if (stopping) return;
+  await tick();
+  lastTickAt = Date.now();
+  if (!stopping) timer = setTimeout(loop, POLL_MS);
+}
+void loop();
+log.info({ pollMs: POLL_MS }, "polling");
+
+// Minimal health listener for uptime checks and container orchestration.
+const health = createServer(async (req, res) => {
+  if (req.url === "/healthz") {
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (req.url === "/readyz") {
+    try {
+      await mesh.publicClient.getBlockNumber();
+    } catch {
+      res
+        .writeHead(503, { "content-type": "application/json" })
+        .end(JSON.stringify({ ok: false, reason: "rpc unreachable" }));
+      return;
+    }
+    const stale = lastTickAt !== 0 && Date.now() - lastTickAt > 5 * POLL_MS;
+    res
+      .writeHead(stale ? 503 : 200, { "content-type": "application/json" })
+      .end(JSON.stringify(stale ? { ok: false, reason: "tick stalled" } : { ok: true }));
+    return;
+  }
+  res.writeHead(404).end();
+});
+health.listen(HEALTH_PORT, () => log.info({ port: HEALTH_PORT }, "health listener up"));
+
+function shutdown(signal: string) {
+  log.info({ signal }, "shutting down");
+  stopping = true;
+  if (timer) clearTimeout(timer);
+  health.close(() => {
+    store.close();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
