@@ -26,7 +26,9 @@ contract AgentRegistry is ERC721 {
     error NotRegistered(string name);
     error NotAgentOwner();
 
-    event AgentRegistered(string name, uint256 indexed tokenId, address indexed wallet, string endpoint, string cardURI);
+    event AgentRegistered(
+        string name, uint256 indexed tokenId, address indexed wallet, string endpoint, string cardURI
+    );
     event AgentUpdated(string name, uint256 indexed tokenId, string endpoint, string cardURI);
 
     constructor() ERC721("AgentMesh Names", "AGENT") {}
@@ -51,11 +53,7 @@ contract AgentRegistry is ERC721 {
         if (_exists(tokenId)) revert NameTaken(name);
 
         _cards[tokenId] = AgentCard({
-            name: name,
-            wallet: msg.sender,
-            endpoint: endpoint,
-            cardURI: cardURI,
-            registeredAt: uint64(block.timestamp)
+            name: name, wallet: msg.sender, endpoint: endpoint, cardURI: cardURI, registeredAt: uint64(block.timestamp)
         });
         _names.push(name);
         _safeMint(msg.sender, tokenId);

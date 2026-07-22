@@ -55,7 +55,12 @@ contract AgentEscrow is Ownable, ReentrancyGuard {
     error ComplianceBlocked(address seller);
 
     event JobCreated(
-        uint256 indexed jobId, address indexed buyer, address indexed seller, uint256 amount, uint64 deadline, bytes32 specHash
+        uint256 indexed jobId,
+        address indexed buyer,
+        address indexed seller,
+        uint256 amount,
+        uint64 deadline,
+        bytes32 specHash
     );
     event JobDelivered(uint256 indexed jobId, bytes32 deliverableHash);
     event JobReleased(uint256 indexed jobId, address indexed seller, uint256 amount);
