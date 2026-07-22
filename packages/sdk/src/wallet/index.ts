@@ -27,5 +27,25 @@ export function walletFromEnv(chain: Chain, privateKeyEnv = "PRIVATE_KEY"): Agen
   }
   const pk = process.env[privateKeyEnv] ?? process.env.PRIVATE_KEY;
   if (!pk) throw new Error(`Missing ${privateKeyEnv} (or PRIVATE_KEY) for WALLET_PROVIDER=eoa`);
+  assertDistinctRoleKeys();
   return new ViemEoaWallet(pk as Hex, chain);
+}
+
+/** Off-local, the buyer/seller/watcher roles must not share a key: the watcher
+ *  key holds screener+arbiter powers, and one leaked key must never be all
+ *  three identities. (DASHBOARD_PRIVATE_KEY may mirror the buyer by design —
+ *  the dashboard acts as the buyer's oversight surface.) */
+function assertDistinctRoleKeys(): void {
+  if ((process.env.AGENTMESH_NETWORK ?? "local") === "local") return;
+  const roles = ["BUYER_PRIVATE_KEY", "SELLER_PRIVATE_KEY", "WATCHER_PRIVATE_KEY"] as const;
+  const seen = new Map<string, string>();
+  for (const role of roles) {
+    const key = process.env[role]?.toLowerCase();
+    if (!key) continue;
+    const other = seen.get(key);
+    if (other) {
+      throw new Error(`${role} and ${other} share the same private key — roles must use distinct keys off-local`);
+    }
+    seen.set(key, role);
+  }
 }
