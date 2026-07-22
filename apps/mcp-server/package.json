@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "agentmesh-mcp": "./src/index.ts"
+    "agentmesh-mcp": "./dist/index.js"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
