@@ -4,6 +4,8 @@ pragma solidity 0.8.26;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IComplianceGate} from "./interfaces/IComplianceGate.sol";
 
@@ -14,7 +16,7 @@ import {IComplianceGate} from "./interfaces/IComplianceGate.sol";
 ///         with an alternate dispute → arbiter-resolution branch and a
 ///         deadline-based refund path. Release is gated by an IComplianceGate:
 ///         funds never flow to a seller that fails screening.
-contract AgentEscrow is Ownable, ReentrancyGuard {
+contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     enum JobStatus {
@@ -38,7 +40,9 @@ contract AgentEscrow is Ownable, ReentrancyGuard {
     }
 
     IERC20 public immutable usdc;
-    IComplianceGate public immutable gate;
+    /// @notice Compliance gate; owner-swappable so a buggy gate can never
+    ///         permanently brick releases (the escrow itself is immutable).
+    IComplianceGate public gate;
     uint64 public immutable disputeWindow; // seconds after delivery during which buyer may dispute
 
     uint256 public nextJobId = 1;
@@ -53,6 +57,8 @@ contract AgentEscrow is Ownable, ReentrancyGuard {
     error DisputeWindowOpen();
     error DisputeWindowClosed();
     error ComplianceBlocked(address seller);
+    error SellerNotBlocked(address seller);
+    error ZeroAddress();
 
     event JobCreated(
         uint256 indexed jobId,
@@ -67,17 +73,39 @@ contract AgentEscrow is Ownable, ReentrancyGuard {
     event JobDisputed(uint256 indexed jobId, address indexed buyer);
     event JobResolved(uint256 indexed jobId, bool releasedToSeller);
     event JobRefunded(uint256 indexed jobId, address indexed buyer, uint256 amount);
+    event JobRefundedCompliance(uint256 indexed jobId, address indexed seller);
+    event GateChanged(address indexed oldGate, address indexed newGate);
 
     constructor(IERC20 usdc_, IComplianceGate gate_, uint64 disputeWindow_, address arbiter) Ownable(arbiter) {
+        if (address(usdc_) == address(0) || address(gate_) == address(0)) revert ZeroAddress();
         usdc = usdc_;
         gate = gate_;
         disputeWindow = disputeWindow_;
+    }
+
+    /// @notice Swap the compliance gate (owner only). Escape hatch for a buggy
+    ///         or compromised gate; emits so watchers can audit every change.
+    function setGate(IComplianceGate newGate) external onlyOwner {
+        if (address(newGate) == address(0)) revert ZeroAddress();
+        emit GateChanged(address(gate), address(newGate));
+        gate = newGate;
+    }
+
+    /// @notice Circuit breaker: blocks new jobs only. Release, dispute and all
+    ///         refund paths stay open so a pause can never trap user funds.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     /// @notice Buyer locks `amount` USDC for `seller` until delivery. Requires prior ERC-20 approval.
     function createJob(address seller, uint256 amount, uint64 deadline, bytes32 specHash)
         external
         nonReentrant
+        whenNotPaused
         returns (uint256 jobId)
     {
         if (seller == address(0) || amount == 0 || deadline <= block.timestamp) revert InvalidParams();
@@ -143,6 +171,22 @@ contract AgentEscrow is Ownable, ReentrancyGuard {
         Job storage job = jobs[jobId];
         if (job.status != JobStatus.Funded) revert WrongStatus(job.status);
         if (block.timestamp <= job.deadline) revert DeadlineNotPassed();
+        _payout(jobId, job, false);
+    }
+
+    /// @notice Escape hatch: refund the buyer of a Delivered/Disputed job whose
+    ///         seller fails compliance screening. Callable by anyone — without
+    ///         this, funds for a later-blocked seller would be locked forever
+    ///         (release reverts on ComplianceBlocked and the dispute window may
+    ///         already be closed). Compliance is absolute: a blocked seller can
+    ///         never be paid, only the buyer refunded.
+    function refundBlocked(uint256 jobId) external nonReentrant {
+        Job storage job = jobs[jobId];
+        if (job.status != JobStatus.Delivered && job.status != JobStatus.Disputed) {
+            revert WrongStatus(job.status);
+        }
+        if (gate.isAllowed(job.seller)) revert SellerNotBlocked(job.seller);
+        emit JobRefundedCompliance(jobId, job.seller);
         _payout(jobId, job, false);
     }
 
