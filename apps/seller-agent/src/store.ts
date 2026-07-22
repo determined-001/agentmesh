@@ -23,7 +23,10 @@ export interface JobRecord {
 export class SellerStore implements X402State {
   private db: Database.Database;
 
-  constructor(path: string, escrow: Address) {
+  /** `scope` must uniquely identify the deployment instance — escrow address
+   *  alone is NOT enough: deterministic local redeploys (fresh anvil chain,
+   *  same nonce) reuse addresses, so include the chain's genesis hash. */
+  constructor(path: string, scope: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
@@ -43,14 +46,14 @@ export class SellerStore implements X402State {
         report TEXT, deliveredTx TEXT, status TEXT NOT NULL
       );
     `);
-    const stored = this.getMeta("escrow");
-    if (stored !== escrow.toLowerCase()) {
+    const stored = this.getMeta("scope");
+    if (stored !== scope.toLowerCase()) {
       if (stored) {
         this.db.exec(
           "DELETE FROM quotes; DELETE FROM consumed; DELETE FROM used_tx; DELETE FROM payments; DELETE FROM jobs; DELETE FROM meta;",
         );
       }
-      this.setMeta("escrow", escrow.toLowerCase());
+      this.setMeta("scope", scope.toLowerCase());
     }
   }
 

@@ -24,7 +24,13 @@ const { client: mesh, network } = meshFromEnv("SELLER_PRIVATE_KEY");
 const me = await mesh.wallet.getAddress();
 
 // Durable state: replay/quote bookkeeping, payments, jobs, block cursor.
-const store = new SellerStore(process.env.SELLER_DB ?? "data/seller.sqlite", mesh.deployment.agentEscrow);
+// Scoped to escrow address + genesis hash so a chain reset with deterministic
+// addresses (fresh anvil) can't resurrect stale jobs/payments.
+const genesis = (await mesh.publicClient.getBlock({ blockNumber: 0n })).hash;
+const store = new SellerStore(
+  process.env.SELLER_DB ?? "data/seller.sqlite",
+  `${mesh.deployment.agentEscrow}|${genesis}`,
+);
 
 // Register the agent name on first boot (idempotent).
 if (!(await mesh.isRegistered(AGENT_NAME))) {
