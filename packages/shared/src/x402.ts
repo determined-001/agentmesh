@@ -36,10 +36,26 @@ export interface PaymentPayload {
   };
 }
 
+/* Base64 helpers using only web-standard APIs (TextEncoder/atob/btoa) so this
+ * module works in Node, browsers, and extension contexts alike — no Buffer. */
+function utf8ToBase64(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function base64ToUtf8(b64: string): string {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
 export function encodePaymentHeader(p: PaymentPayload): string {
-  return Buffer.from(JSON.stringify(p), "utf8").toString("base64");
+  return utf8ToBase64(JSON.stringify(p));
 }
 
 export function decodePaymentHeader(header: string): PaymentPayload {
-  return JSON.parse(Buffer.from(header, "base64").toString("utf8")) as PaymentPayload;
+  return JSON.parse(base64ToUtf8(header)) as PaymentPayload;
 }
