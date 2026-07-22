@@ -48,11 +48,11 @@ export class SellerStore implements X402State {
     `);
     const stored = this.getMeta("scope");
     if (stored !== scope.toLowerCase()) {
-      if (stored) {
-        this.db.exec(
-          "DELETE FROM quotes; DELETE FROM consumed; DELETE FROM used_tx; DELETE FROM payments; DELETE FROM jobs; DELETE FROM meta;",
-        );
-      }
+      // Unconditional wipe on mismatch — a missing scope marker with existing
+      // rows (legacy DB) must not let stale jobs shadow new ones.
+      this.db.exec(
+        "DELETE FROM quotes; DELETE FROM consumed; DELETE FROM used_tx; DELETE FROM payments; DELETE FROM jobs; DELETE FROM meta;",
+      );
       this.setMeta("scope", scope.toLowerCase());
     }
   }

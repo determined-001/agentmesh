@@ -25,7 +25,9 @@ export class WatcherStore {
     `);
     const stored = this.getMeta("scope");
     if (stored !== scope.toLowerCase()) {
-      if (stored) this.db.exec("DELETE FROM screened; DELETE FROM tracked; DELETE FROM meta;");
+      // Unconditional wipe on mismatch — see SellerStore: legacy/foreign DBs
+      // must never leak tracking state into a new deployment.
+      this.db.exec("DELETE FROM screened; DELETE FROM tracked; DELETE FROM meta;");
       this.setMeta("scope", scope.toLowerCase());
     }
   }
