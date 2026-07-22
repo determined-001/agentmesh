@@ -39,7 +39,8 @@ contract ComplianceGate is AccessControl, IComplianceGate {
         onlyRole(SCREENER_ROLE)
     {
         for (uint256 i = 0; i < accounts.length; i++) {
-            verdicts[accounts[i]] = Verdict({allowed: allowed, reasonHash: reasonHash, screenedAt: uint64(block.timestamp)});
+            verdicts[accounts[i]] =
+                Verdict({allowed: allowed, reasonHash: reasonHash, screenedAt: uint64(block.timestamp)});
             emit Screened(accounts[i], allowed, reasonHash, msg.sender);
         }
     }

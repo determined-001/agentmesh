@@ -42,9 +42,7 @@ contract ComplianceGateTest is Test {
     function test_RandoCannotScreen() public {
         bytes32 role = gate.SCREENER_ROLE();
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, rando, role)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, rando, role));
         gate.setAllowed(agent, true, bytes32(0));
     }
 
