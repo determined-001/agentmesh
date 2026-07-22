@@ -21,7 +21,7 @@ export function loadDeployment(network: NetworkName, fromJson?: Partial<Deployme
   const agentEscrow = env("AGENT_ESCROW_ADDRESS") ?? d.agentEscrow;
   if (!usdc || !agentRegistry || !complianceGate || !agentEscrow) {
     throw new Error(
-      `Missing deployment addresses for ${network}. Run the deploy script or set USDC_ADDRESS / AGENT_REGISTRY_ADDRESS / COMPLIANCE_GATE_ADDRESS / AGENT_ESCROW_ADDRESS.`
+      `Missing deployment addresses for ${network}. Run the deploy script or set USDC_ADDRESS / AGENT_REGISTRY_ADDRESS / COMPLIANCE_GATE_ADDRESS / AGENT_ESCROW_ADDRESS.`,
     );
   }
   return {
@@ -47,6 +47,9 @@ export function formatUsd(amount: bigint): string {
   const neg = amount < 0n;
   const abs = neg ? -amount : amount;
   const int = abs / 10n ** BigInt(USDC_DECIMALS);
-  const frac = (abs % 10n ** BigInt(USDC_DECIMALS)).toString().padStart(USDC_DECIMALS, "0").replace(/0+$/, "");
+  const frac = (abs % 10n ** BigInt(USDC_DECIMALS))
+    .toString()
+    .padStart(USDC_DECIMALS, "0")
+    .replace(/0+$/, "");
   return `${neg ? "-" : ""}$${int}${frac ? "." + frac : ""}`;
 }
