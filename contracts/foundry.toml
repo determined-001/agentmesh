@@ -10,5 +10,21 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
 ]
 
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 64
+depth = 32
+fail_on_revert = true
+
+# CI runs deeper campaigns: FOUNDRY_PROFILE=ci forge test
+[profile.ci.fuzz]
+runs = 1000
+
+[profile.ci.invariant]
+runs = 256
+depth = 64
+
 [rpc_endpoints]
 arc_testnet = "${ARC_TESTNET_RPC_URL}"
