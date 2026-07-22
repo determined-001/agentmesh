@@ -1,12 +1,12 @@
-import type { Address } from "viem";
 import {
   decodePaymentHeader,
   encodePaymentHeader,
-  X_PAYMENT_HEADER,
-  X_PAYMENT_RESPONSE_HEADER,
   type PaymentPayload,
   type PaymentRequirements,
+  X_PAYMENT_HEADER,
+  X_PAYMENT_RESPONSE_HEADER,
 } from "@agentmesh/shared";
+import type { Address } from "viem";
 import type { AgentMeshClient } from "./client.js";
 
 export interface PaidFetchResult {
@@ -25,7 +25,7 @@ export interface PaidFetchResult {
 export async function paidFetch(
   mesh: AgentMeshClient,
   url: string,
-  opts: { maxAmount?: bigint; init?: RequestInit } = {}
+  opts: { maxAmount?: bigint; init?: RequestInit } = {},
 ): Promise<PaidFetchResult> {
   const first = await fetch(url, opts.init);
   if (first.status !== 402) return { response: first };
@@ -34,7 +34,7 @@ export async function paidFetch(
   const amount = BigInt(req.maxAmountRequired);
   if (opts.maxAmount !== undefined && amount > opts.maxAmount) {
     throw new Error(
-      `Payment required (${amount} base units) exceeds maxAmount (${opts.maxAmount}) for ${url}`
+      `Payment required (${amount} base units) exceeds maxAmount (${opts.maxAmount}) for ${url}`,
     );
   }
   if (req.asset.toLowerCase() !== mesh.deployment.usdc.toLowerCase()) {
