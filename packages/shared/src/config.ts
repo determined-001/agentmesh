@@ -37,10 +37,23 @@ export function loadDeployment(network: NetworkName, fromJson?: Partial<Deployme
 /** USDC ERC-20 uses 6 decimals on Arc. */
 export const USDC_DECIMALS = 6;
 
+/** Parse a dollar amount ("1", "0.5", ".5", "-1.25") into USDC base units.
+ *  Throws on malformed input or more than {@link USDC_DECIMALS} fractional digits —
+ *  silent truncation of money amounts is never what you want. */
 export function usd(amount: string | number): bigint {
-  const [int, frac = ""] = String(amount).split(".");
-  const fracPadded = (frac + "000000").slice(0, USDC_DECIMALS);
-  return BigInt(int) * 10n ** BigInt(USDC_DECIMALS) + BigInt(fracPadded || "0");
+  let s = String(amount).trim();
+  const neg = s.startsWith("-");
+  if (neg) s = s.slice(1);
+  if (s.startsWith(".")) s = `0${s}`;
+  if (!/^\d+(\.\d*)?$/.test(s)) {
+    throw new Error(`invalid USD amount: ${amount}`);
+  }
+  const [int, frac = ""] = s.split(".");
+  if (frac.length > USDC_DECIMALS) {
+    throw new Error(`USD amount has more than ${USDC_DECIMALS} decimal places: ${amount}`);
+  }
+  const units = BigInt(int) * 10n ** BigInt(USDC_DECIMALS) + BigInt(frac.padEnd(USDC_DECIMALS, "0") || "0");
+  return neg ? -units : units;
 }
 
 export function formatUsd(amount: bigint): string {
