@@ -34,62 +34,85 @@ async function act(action, jobId, btn) {
   }
 }
 
+// DOM builders only — agent names come from the on-chain registry, which anyone
+// can write to; interpolating them into innerHTML would be popup XSS.
+function span(className, text) {
+  const s = document.createElement("span");
+  s.className = className;
+  s.textContent = text;
+  return s;
+}
+
+function div(className, ...children) {
+  const d = document.createElement("div");
+  d.className = className;
+  for (const c of children) d.append(c);
+  return d;
+}
+
+function empty(container, text) {
+  container.replaceChildren(div("empty", text));
+}
+
 function render(state) {
   $("network").textContent = state.network;
   $("status").textContent = `${state.agents.length} agents · ${state.payments.count} micropayments`;
 
-  $("agents").innerHTML = "";
+  $("agents").replaceChildren();
   for (const a of state.agents) {
-    const el = document.createElement("div");
-    el.className = "row";
-    el.innerHTML = `
-      <div class="top">
-        <span class="name">${a.name}.agent.arc</span>
-        <span class="bal">${fmtUsd(a.balance)}</span>
-      </div>
-      <div class="top">
-        <span class="meta">${short(a.wallet)}</span>
-        <span class="chip ${a.allowed ? "good" : "neutral"}">${a.allowed ? "screened ✓" : "not screened"}</span>
-      </div>`;
-    $("agents").appendChild(el);
+    $("agents").append(
+      div(
+        "row",
+        div("top", span("name", `${a.name}.agent.arc`), span("bal", fmtUsd(a.balance))),
+        div(
+          "top",
+          span("meta", short(a.wallet)),
+          span(`chip ${a.allowed ? "good" : "neutral"}`, a.allowed ? "screened ✓" : "not screened"),
+        ),
+      ),
+    );
   }
-  if (!state.agents.length) $("agents").innerHTML = '<div class="empty">No agents yet</div>';
+  if (!state.agents.length) empty($("agents"), "No agents yet");
 
   const pending = state.jobs.filter((j) => JOB_STATUS[j.status] === "Delivered");
-  $("pending").innerHTML = "";
+  $("pending").replaceChildren();
   for (const j of pending) {
-    const el = document.createElement("div");
-    el.className = "row";
-    el.innerHTML = `
-      <div class="top">
-        <span class="name">Job #${j.jobId} — ${fmtUsd(j.amount)}</span>
-        <span class="chip warning">Delivered</span>
-      </div>
-      <div class="meta">seller ${short(j.seller)} · dispute window open</div>
-      <div class="actions">
-        <button class="approve">Approve release</button>
-        <button class="dispute">Dispute</button>
-      </div>`;
-    el.querySelector(".approve").addEventListener("click", (e) => act("release", j.jobId, e.target));
-    el.querySelector(".dispute").addEventListener("click", (e) => act("dispute", j.jobId, e.target));
-    $("pending").appendChild(el);
-  }
-  if (!pending.length) $("pending").innerHTML = '<div class="empty">Nothing awaiting approval</div>';
+    const approve = document.createElement("button");
+    approve.className = "approve";
+    approve.textContent = "Approve release";
+    approve.addEventListener("click", (e) => act("release", j.jobId, e.target));
+    const disputeBtn = document.createElement("button");
+    disputeBtn.className = "dispute";
+    disputeBtn.textContent = "Dispute";
+    disputeBtn.addEventListener("click", (e) => act("dispute", j.jobId, e.target));
 
-  $("jobs").innerHTML = "";
+    $("pending").append(
+      div(
+        "row",
+        div("top", span("name", `Job #${j.jobId} — ${fmtUsd(j.amount)}`), span("chip warning", "Delivered")),
+        div("meta", `seller ${short(j.seller)} · dispute window open`),
+        div("actions", approve, disputeBtn),
+      ),
+    );
+  }
+  if (!pending.length) empty($("pending"), "Nothing awaiting approval");
+
+  $("jobs").replaceChildren();
   for (const j of state.jobs.slice(0, 5)) {
     const name = JOB_STATUS[j.status];
-    const el = document.createElement("div");
-    el.className = "row";
-    el.innerHTML = `
-      <div class="top">
-        <span class="name">#${j.jobId} · ${fmtUsd(j.amount)}</span>
-        <span class="chip ${CHIP[name] || "neutral"}">${name}</span>
-      </div>
-      <div class="meta">${short(j.buyer)} → ${short(j.seller)}</div>`;
-    $("jobs").appendChild(el);
+    $("jobs").append(
+      div(
+        "row",
+        div(
+          "top",
+          span("name", `#${j.jobId} · ${fmtUsd(j.amount)}`),
+          span(`chip ${CHIP[name] || "neutral"}`, name),
+        ),
+        div("meta", `${short(j.buyer)} → ${short(j.seller)}`),
+      ),
+    );
   }
-  if (!state.jobs.length) $("jobs").innerHTML = '<div class="empty">No escrow jobs yet</div>';
+  if (!state.jobs.length) empty($("jobs"), "No escrow jobs yet");
 }
 
 async function refresh() {
