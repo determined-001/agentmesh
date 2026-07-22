@@ -55,4 +55,61 @@ contract ComplianceGateTest is Test {
         assertTrue(gate.isAllowed(agent));
         assertTrue(gate.isAllowed(rando));
     }
+
+    function test_ScreenedEventEmitted() public {
+        vm.prank(admin);
+        vm.expectEmit(true, true, false, true);
+        emit ComplianceGate.Screened(agent, true, keccak256("clean"), admin);
+        gate.setAllowed(agent, true, keccak256("clean"));
+    }
+
+    // ── verdict TTL ─────────────────────────────────────────────────────
+
+    function test_TtlZeroNeverExpires() public {
+        vm.prank(admin);
+        gate.setAllowed(agent, true, keccak256("clean"));
+        vm.warp(block.timestamp + 100 * 365 days);
+        assertTrue(gate.isAllowed(agent)); // default ttl = 0 → no expiry
+    }
+
+    function test_TtlExpiresAllowedVerdict() public {
+        vm.startPrank(admin);
+        gate.setVerdictTtl(1 days);
+        gate.setAllowed(agent, true, keccak256("clean"));
+        vm.stopPrank();
+
+        assertTrue(gate.isAllowed(agent));
+        vm.warp(block.timestamp + 1 days); // exactly at boundary: still valid
+        assertTrue(gate.isAllowed(agent));
+        vm.warp(block.timestamp + 1); // past boundary: stale
+        assertFalse(gate.isAllowed(agent));
+
+        // re-screening refreshes
+        vm.prank(admin);
+        gate.setAllowed(agent, true, keccak256("re-screened"));
+        assertTrue(gate.isAllowed(agent));
+    }
+
+    function test_TtlNeverRevivesDeniedVerdict() public {
+        vm.startPrank(admin);
+        gate.setVerdictTtl(1 days);
+        gate.setAllowed(agent, false, keccak256("flagged"));
+        vm.stopPrank();
+        vm.warp(block.timestamp + 2 days);
+        assertFalse(gate.isAllowed(agent));
+    }
+
+    function test_SetVerdictTtlAdminOnlyAndEmits() public {
+        vm.prank(rando);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, rando, bytes32(0))
+        );
+        gate.setVerdictTtl(1 hours);
+
+        vm.prank(admin);
+        vm.expectEmit(false, false, false, true);
+        emit ComplianceGate.VerdictTtlSet(0, 1 hours);
+        gate.setVerdictTtl(1 hours);
+        assertEq(gate.verdictTtl(), 1 hours);
+    }
 }

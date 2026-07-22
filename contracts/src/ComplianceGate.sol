@@ -20,11 +20,22 @@ contract ComplianceGate is AccessControl, IComplianceGate {
 
     mapping(address => Verdict) public verdicts;
 
+    /// @notice Seconds after which an "allowed" verdict goes stale and the
+    ///         account reads as not allowed until re-screened. 0 disables expiry.
+    uint64 public verdictTtl;
+
     event Screened(address indexed account, bool allowed, bytes32 reasonHash, address indexed screener);
+    event VerdictTtlSet(uint64 oldTtl, uint64 newTtl);
 
     constructor(address admin) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(SCREENER_ROLE, admin);
+    }
+
+    /// @notice Set the verdict time-to-live (admin only). 0 = verdicts never expire.
+    function setVerdictTtl(uint64 newTtl) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit VerdictTtlSet(verdictTtl, newTtl);
+        verdictTtl = newTtl;
     }
 
     /// @notice Record a screening verdict for `account`.
@@ -46,7 +57,13 @@ contract ComplianceGate is AccessControl, IComplianceGate {
     }
 
     /// @inheritdoc IComplianceGate
+    /// @dev An "allowed" verdict older than `verdictTtl` reads as false —
+    ///      stale screenings must not keep authorizing payouts forever.
     function isAllowed(address account) external view returns (bool) {
-        return verdicts[account].allowed;
+        Verdict storage v = verdicts[account];
+        if (!v.allowed) return false;
+        uint64 ttl = verdictTtl;
+        if (ttl != 0 && block.timestamp > uint256(v.screenedAt) + ttl) return false;
+        return true;
     }
 }
