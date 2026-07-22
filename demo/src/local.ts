@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentMeshClient, JOB_STATUS, paidFetch, ViemEoaWallet } from "@agentmesh/sdk";
 import { type Deployment, formatUsd, localAnvil, usd } from "@agentmesh/shared";
-import type { Address, Hex } from "viem";
+import type { Hex } from "viem";
 
 /** End-to-end AgentMesh demo on a local anvil chain.
  *  Boots anvil, deploys the stack, starts the DataAgent (seller) and the
@@ -87,21 +87,12 @@ if (deploy.status !== 0) {
   console.error(deploy.stdout, deploy.stderr);
   throw new Error("deploy failed");
 }
-const grab = (label: string): Address => {
-  const m = deploy.stdout.match(new RegExp(`${label}: (0x[0-9a-fA-F]{40})`));
-  if (!m) throw new Error(`address for ${label} not found in deploy output`);
-  return m[1] as Address;
-};
-const deployment: Deployment = {
-  network: "local",
-  usdc: grab("USDC"),
-  agentRegistry: grab("AgentRegistry"),
-  complianceGate: grab("ComplianceGate"),
-  agentEscrow: grab("AgentEscrow"),
-  disputeWindow: DISPUTE_WINDOW,
-};
-mkdirSync(join(ROOT, "deployments"), { recursive: true });
-writeFileSync(join(ROOT, "deployments", "local.json"), JSON.stringify(deployment, null, 2));
+// Deploy.s.sol writes the machine-readable artifact via vm.writeJson — no
+// stdout scraping.
+const deployment = JSON.parse(readFileSync(join(ROOT, "deployments", "local.json"), "utf8")) as Deployment;
+if (deployment.disputeWindow !== DISPUTE_WINDOW) {
+  throw new Error(`artifact disputeWindow ${deployment.disputeWindow} != expected ${DISPUTE_WINDOW}`);
+}
 console.log(deployment);
 
 const mk = (key: Hex) => new AgentMeshClient(localAnvil, deployment, new ViemEoaWallet(key, localAnvil));
