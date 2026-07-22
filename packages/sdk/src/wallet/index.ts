@@ -1,11 +1,11 @@
 import type { Chain, Hex } from "viem";
+import { CircleWallet } from "./circle.js";
 import type { AgentWallet } from "./types.js";
 import { ViemEoaWallet } from "./viemEoa.js";
-import { CircleWallet } from "./circle.js";
 
+export { CircleWallet, type CircleWalletConfig } from "./circle.js";
 export * from "./types.js";
 export { ViemEoaWallet } from "./viemEoa.js";
-export { CircleWallet, type CircleWalletConfig } from "./circle.js";
 
 /** Build a wallet from the environment.
  *  WALLET_PROVIDER=eoa (default): uses `privateKeyEnv` (or PRIVATE_KEY).
@@ -20,7 +20,7 @@ export function walletFromEnv(chain: Chain, privateKeyEnv = "PRIVATE_KEY"): Agen
     const address = process.env.CIRCLE_WALLET_ADDRESS as `0x${string}` | undefined;
     if (!apiKey || !entitySecret || !walletId || !address) {
       throw new Error(
-        "WALLET_PROVIDER=circle requires CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_WALLET_ID, CIRCLE_WALLET_ADDRESS"
+        "WALLET_PROVIDER=circle requires CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_WALLET_ID, CIRCLE_WALLET_ADDRESS",
       );
     }
     return new CircleWallet({ apiKey, entitySecret, walletId, address }, chain);
