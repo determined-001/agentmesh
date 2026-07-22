@@ -2,6 +2,7 @@
   "name": "agentmesh",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Compliant agent-to-agent settlement layer on Arc — named agent wallets, x402 micropayments, screened escrow, automated watchers.",
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build",
