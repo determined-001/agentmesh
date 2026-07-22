@@ -15,13 +15,21 @@ const fmtUsd = (base) => {
 };
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+let actionToken = "";
+chrome.storage?.sync.get("actionToken", (v) => {
+  actionToken = v.actionToken || "";
+  if ($("token")) $("token").value = actionToken;
+});
+
 async function act(action, jobId, btn) {
   btn.disabled = true;
   btn.textContent = "…";
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (actionToken) headers.Authorization = `Bearer ${actionToken}`;
     const res = await fetch(`${API}/action`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ action, jobId }),
     });
     const data = await res.json();
@@ -124,6 +132,15 @@ async function refresh() {
     $("status").textContent = "Dashboard offline — run pnpm dev:dashboard";
   }
 }
+
+$("saveToken")?.addEventListener("click", () => {
+  actionToken = $("token").value.trim();
+  chrome.storage?.sync.set({ actionToken });
+  $("saveToken").textContent = "saved ✓";
+  setTimeout(() => {
+    $("saveToken").textContent = "Save";
+  }, 1200);
+});
 
 refresh();
 setInterval(refresh, 3000);
