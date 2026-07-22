@@ -1,5 +1,5 @@
 import { JOB_STATUS, meshFromEnv, paidFetch } from "@agentmesh/sdk";
-import { explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
+import { assertAgentEndpoint, explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { type Address, isAddress } from "viem";
@@ -174,6 +174,8 @@ server.tool(
   { sellerName: z.string(), jobId: z.string() },
   async ({ sellerName, jobId }) => {
     const { card } = await mesh.resolveAgent(sellerName);
+    // Registry endpoints are attacker-registrable — never fetch internal targets.
+    assertAgentEndpoint(card.endpoint, { allowPrivate: network === "local" });
     const res = await fetch(`${card.endpoint}/jobs/${jobId}/deliverable`);
     return json(await res.json());
   },
