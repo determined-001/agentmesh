@@ -12,10 +12,12 @@
     "@agentmesh/sdk": "workspace:*",
     "@agentmesh/shared": "workspace:*",
     "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^13.0.1",
     "hono": "^4.6.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
