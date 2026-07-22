@@ -45,4 +45,8 @@ export class ViemEoaWallet implements AgentWallet {
   async waitForReceipt(txHash: Hex): Promise<TransactionReceipt> {
     return this.publicClient.waitForTransactionReceipt({ hash: txHash });
   }
+
+  async signMessage(message: string): Promise<Hex> {
+    return this.walletClient.signMessage({ account: this.account, message });
+  }
 }

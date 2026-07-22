@@ -15,4 +15,6 @@ export interface AgentWallet {
   getAddress(): Promise<Address>;
   writeContract(params: WriteContractParams): Promise<Hex>;
   waitForReceipt(txHash: Hex): Promise<TransactionReceipt>;
+  /** Sign an arbitrary message (EIP-191). Used to bind x402 payment claims to the payer. */
+  signMessage(message: string): Promise<Hex>;
 }
