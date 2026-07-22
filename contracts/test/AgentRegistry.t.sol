@@ -58,16 +58,17 @@ contract AgentRegistryTest is Test {
 
     function test_ListAgentsPagination() public {
         vm.startPrank(alice);
-        registry.register("a1", "e", "c");
-        registry.register("a2", "e", "c");
-        registry.register("a3", "e", "c");
+        registry.register("ag1", "e", "c");
+        registry.register("ag2", "e", "c");
+        registry.register("ag3", "e", "c");
         vm.stopPrank();
 
         AgentRegistry.AgentCard[] memory page = registry.listAgents(1, 10);
         assertEq(page.length, 2);
-        assertEq(page[0].name, "a2");
-        assertEq(page[1].name, "a3");
+        assertEq(page[0].name, "ag2");
+        assertEq(page[1].name, "ag3");
         assertEq(registry.listAgents(5, 10).length, 0);
+        assertEq(registry.listAgents(3, 10).length, 0); // offset == n edge
     }
 
     function test_ResolveFollowsTransfer() public {
@@ -77,5 +78,71 @@ contract AgentRegistryTest is Test {
         registry.transferFrom(alice, bob, tokenId);
         (address wallet,) = registry.resolve("databot");
         assertEq(wallet, bob);
+    }
+
+    function test_TransferUpdatesCardWalletAndEmits() public {
+        vm.prank(alice);
+        uint256 tokenId = registry.register("databot", "e", "c");
+
+        vm.prank(alice);
+        vm.expectEmit(true, true, true, false);
+        emit AgentRegistry.AgentWalletChanged(tokenId, alice, bob);
+        registry.transferFrom(alice, bob, tokenId);
+
+        // card.wallet follows ownership — payment routing moves with the name
+        (, AgentRegistry.AgentCard memory card) = registry.resolve("databot");
+        assertEq(card.wallet, bob);
+    }
+
+    function test_RevertOnNameLength() public {
+        vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NameLength.selector, "ab"));
+        registry.register("ab", "e", "c");
+        string memory tooLong = "a234567890123456789012345678901234"; // 34 chars
+        vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NameLength.selector, tooLong));
+        registry.register(tooLong, "e", "c");
+        // boundaries are legal
+        vm.startPrank(alice);
+        registry.register("abc", "e", "c");
+        registry.register("a2345678901234567890123456789012", "e", "c"); // 32 chars
+        vm.stopPrank();
+    }
+
+    function test_ReentrantRegisterCannotStealName() public {
+        ReentrantReceiver attacker = new ReentrantReceiver(registry);
+        vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NameTaken.selector, "sneaky"));
+        attacker.go("sneaky");
+    }
+
+    function testFuzz_NameCharsetEnforced(bytes1 c) public {
+        bool valid = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x2d;
+        string memory name = string(abi.encodePacked("ab", c));
+        vm.prank(alice);
+        if (valid) {
+            registry.register(name, "e", "c");
+            assertTrue(registry.isRegistered(name));
+        } else {
+            vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NameInvalid.selector, name));
+            registry.register(name, "e", "c");
+        }
+    }
+}
+
+/// @dev Attempts to re-register the same name from inside onERC721Received.
+contract ReentrantReceiver {
+    AgentRegistry private immutable registry;
+    string private name;
+
+    constructor(AgentRegistry registry_) {
+        registry = registry_;
+    }
+
+    function go(string calldata name_) external {
+        name = name_;
+        registry.register(name_, "e", "c");
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
+        registry.register(name, "e2", "c2"); // must revert NameTaken → bubbles up
+        return this.onERC721Received.selector;
     }
 }

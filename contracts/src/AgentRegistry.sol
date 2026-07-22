@@ -20,9 +20,13 @@ contract AgentRegistry is ERC721 {
     mapping(uint256 => AgentCard) private _cards;
     string[] private _names;
 
+    uint256 public constant MIN_NAME_LENGTH = 3;
+    uint256 public constant MAX_NAME_LENGTH = 32;
+
     error NameTaken(string name);
     error NameEmpty();
     error NameInvalid(string name);
+    error NameLength(string name);
     error NotRegistered(string name);
     error NotAgentOwner();
 
@@ -30,6 +34,7 @@ contract AgentRegistry is ERC721 {
         string name, uint256 indexed tokenId, address indexed wallet, string endpoint, string cardURI
     );
     event AgentUpdated(string name, uint256 indexed tokenId, string endpoint, string cardURI);
+    event AgentWalletChanged(uint256 indexed tokenId, address indexed oldWallet, address indexed newWallet);
 
     constructor() ERC721("AgentMesh Names", "AGENT") {}
 
@@ -44,6 +49,7 @@ contract AgentRegistry is ERC721 {
     {
         bytes memory b = bytes(name);
         if (b.length == 0) revert NameEmpty();
+        if (b.length < MIN_NAME_LENGTH || b.length > MAX_NAME_LENGTH) revert NameLength(name);
         for (uint256 i = 0; i < b.length; i++) {
             bytes1 c = b[i];
             bool ok = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x2d;
@@ -56,8 +62,9 @@ contract AgentRegistry is ERC721 {
             name: name, wallet: msg.sender, endpoint: endpoint, cardURI: cardURI, registeredAt: uint64(block.timestamp)
         });
         _names.push(name);
-        _safeMint(msg.sender, tokenId);
         emit AgentRegistered(name, tokenId, msg.sender, endpoint, cardURI);
+        // effects + event first, external onERC721Received callback last (CEI)
+        _safeMint(msg.sender, tokenId);
     }
 
     /// @notice Update the endpoint / card URI for a name the caller owns.
@@ -106,5 +113,15 @@ contract AgentRegistry is ERC721 {
 
     function _exists(uint256 tokenId) internal view returns (bool) {
         return _ownerOf(tokenId) != address(0);
+    }
+
+    /// @dev Keep the card's settlement wallet in lockstep with NFT ownership:
+    ///      selling/transferring a name transfers payment routing with it.
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
+        from = super._update(to, tokenId, auth);
+        if (from != address(0) && to != address(0) && to != from) {
+            _cards[tokenId].wallet = to;
+            emit AgentWalletChanged(tokenId, from, to);
+        }
     }
 }
