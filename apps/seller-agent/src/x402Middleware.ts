@@ -25,7 +25,8 @@ export interface X402Options {
   mesh: AgentMeshClient;
   network: NetworkName;
   payTo: Address;
-  payments: PaymentRecord[]; // shared log, surfaced at /payments for the dashboard
+  /** Called once per settled (non-idempotent) payment — surface at /payments. */
+  recordPayment: (p: PaymentRecord) => void;
   state?: X402State; // injectable for tests; defaults to module singleton
 }
 
@@ -191,7 +192,7 @@ export function priced(price: bigint, description: string, opts: X402Options) {
 
     const { txHash, from, amount } = payload.payload;
     if (!verdict.idempotent) {
-      opts.payments.push({ ts: Date.now(), from, amount, txHash, resource });
+      opts.recordPayment({ ts: Date.now(), from, amount, txHash, resource });
     }
     c.header(
       X_PAYMENT_RESPONSE_HEADER,
