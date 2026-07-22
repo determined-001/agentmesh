@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import { meshFromEnv } from "@agentmesh/sdk";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 

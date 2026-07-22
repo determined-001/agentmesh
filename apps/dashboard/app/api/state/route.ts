@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server";
-import { createPublicClient, http, type Address } from "viem";
-import {
-  agentRegistryAbi,
-  agentEscrowAbi,
-  complianceGateAbi,
-  usdcAbi,
-  chainFor,
-  type NetworkName,
-} from "@agentmesh/shared";
 import { readDeployment } from "@agentmesh/sdk";
+import {
+  agentEscrowAbi,
+  agentRegistryAbi,
+  chainFor,
+  complianceGateAbi,
+  type NetworkName,
+  usdcAbi,
+} from "@agentmesh/shared";
+import { NextResponse } from "next/server";
+import { type Address, createPublicClient, http } from "viem";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +52,7 @@ export async function GET() {
           }) as Promise<boolean>,
         ]);
         return { ...a, wallet: owner, balance, allowed };
-      })
+      }),
     );
 
     const nextJobId = (await client.readContract({
@@ -71,7 +71,7 @@ export async function GET() {
           args: [id],
         })) as Record<string, unknown>;
         return { jobId: id.toString(), ...job };
-      })
+      }),
     );
 
     let payments: unknown = { count: 0, payments: [] };
@@ -83,7 +83,7 @@ export async function GET() {
     }
 
     const body = JSON.parse(
-      JSON.stringify({ network, deployment, agents, jobs, payments, ts: Date.now() }, big)
+      JSON.stringify({ network, deployment, agents, jobs, payments, ts: Date.now() }, big),
     );
     return NextResponse.json(body);
   } catch (err) {
