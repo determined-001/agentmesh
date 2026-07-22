@@ -1,10 +1,10 @@
+import { JOB_STATUS, meshFromEnv } from "@agentmesh/sdk";
+import { formatUsd, usd } from "@agentmesh/shared";
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { serve } from "@hono/node-server";
-import { parseAbiItem, type Address } from "viem";
-import { meshFromEnv, JOB_STATUS } from "@agentmesh/sdk";
-import { formatUsd, usd } from "@agentmesh/shared";
-import { priced, type PaymentRecord } from "./x402Middleware.js";
+import { type Address, parseAbiItem } from "viem";
+import { type PaymentRecord, priced } from "./x402Middleware.js";
 
 /** DataAgent — the seller side of the AgentMesh demo.
  *  Serves sub-cent x402-priced data endpoints and works escrowed jobs:
@@ -49,7 +49,7 @@ app.get("/card", (c) =>
     ],
     escrow: { accepts: true, reportPriceUsd: "5.00" },
     network,
-  })
+  }),
 );
 app.get("/payments", (c) => c.json({ count: payments.length, payments: payments.slice(-500) }));
 app.get("/jobs", (c) => c.json([...jobsWorked.values()]));
@@ -68,19 +68,19 @@ const HEADLINES = [
   "x402 adoption accelerates across payment networks",
 ];
 app.get("/api/headline", priced(usd("0.001"), "One market headline", paymentOpts), (c) =>
-  c.json({ headline: HEADLINES[Math.floor(Math.random() * HEADLINES.length)], ts: Date.now() })
+  c.json({ headline: HEADLINES[Math.floor(Math.random() * HEADLINES.length)], ts: Date.now() }),
 );
 app.get("/api/datapoint", priced(usd("0.002"), "One market datapoint", paymentOpts), (c) =>
   c.json({
     metric: "arc_usdc_settlement_volume_usd",
     value: Math.round(1_000_000 + Math.random() * 9_000_000),
     ts: Date.now(),
-  })
+  }),
 );
 
 // ---- escrow job worker ----
 const jobCreatedEvent = parseAbiItem(
-  "event JobCreated(uint256 indexed jobId, address indexed buyer, address indexed seller, uint256 amount, uint64 deadline, bytes32 specHash)"
+  "event JobCreated(uint256 indexed jobId, address indexed buyer, address indexed seller, uint256 amount, uint64 deadline, bytes32 specHash)",
 );
 
 let lastBlock = 0n;

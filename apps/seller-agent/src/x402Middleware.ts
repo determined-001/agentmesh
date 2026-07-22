@@ -1,14 +1,14 @@
-import type { Context, Next } from "hono";
-import { parseEventLogs, type Address } from "viem";
+import type { AgentMeshClient } from "@agentmesh/sdk";
 import {
   decodePaymentHeader,
+  type NetworkName,
+  type PaymentRequirements,
   usdcAbi,
   X_PAYMENT_HEADER,
   X_PAYMENT_RESPONSE_HEADER,
-  type NetworkName,
-  type PaymentRequirements,
 } from "@agentmesh/shared";
-import type { AgentMeshClient } from "@agentmesh/sdk";
+import type { Context, Next } from "hono";
+import { type Address, parseEventLogs } from "viem";
 
 export interface PaymentRecord {
   ts: number;
@@ -75,7 +75,7 @@ export function priced(price: bigint, description: string, opts: X402Options) {
         t.address.toLowerCase() === opts.mesh.deployment.usdc.toLowerCase() &&
         (t.args.from as string).toLowerCase() === from.toLowerCase() &&
         (t.args.to as string).toLowerCase() === opts.payTo.toLowerCase() &&
-        (t.args.value as bigint) >= price
+        (t.args.value as bigint) >= price,
     );
     if (!match) return c.json({ error: "no matching USDC transfer in tx" }, 402);
 
@@ -83,7 +83,7 @@ export function priced(price: bigint, description: string, opts: X402Options) {
     opts.payments.push({ ts: Date.now(), from, amount, txHash, resource });
     c.header(
       X_PAYMENT_RESPONSE_HEADER,
-      Buffer.from(JSON.stringify({ settled: true, txHash, network: opts.network })).toString("base64")
+      Buffer.from(JSON.stringify({ settled: true, txHash, network: opts.network })).toString("base64"),
     );
     await next();
   };
