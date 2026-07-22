@@ -1,6 +1,12 @@
 const API = "http://localhost:3000/api";
 const JOB_STATUS = ["None", "Funded", "Delivered", "Disputed", "Released", "Refunded"];
-const CHIP = { Funded: "accent", Delivered: "warning", Disputed: "serious", Released: "good", Refunded: "neutral" };
+const CHIP = {
+  Funded: "accent",
+  Delivered: "warning",
+  Disputed: "serious",
+  Released: "good",
+  Refunded: "neutral",
+};
 
 const $ = (id) => document.getElementById(id);
 const fmtUsd = (base) => {
