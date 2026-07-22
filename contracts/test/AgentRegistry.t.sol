@@ -113,6 +113,20 @@ contract AgentRegistryTest is Test {
         attacker.go("sneaky");
     }
 
+    function test_TokenURIReturnsCardURI() public {
+        vm.prank(alice);
+        uint256 tokenId = registry.register("databot", "e", "ipfs://card1");
+        assertEq(registry.tokenURI(tokenId), "ipfs://card1");
+    }
+
+    function test_UnregisteredNameReverts() public {
+        vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NotRegistered.selector, "ghost"));
+        registry.resolve("ghost");
+        vm.expectRevert(abi.encodeWithSelector(AgentRegistry.NotRegistered.selector, "ghost"));
+        registry.update("ghost", "e", "c");
+        assertFalse(registry.isRegistered("ghost"));
+    }
+
     function testFuzz_NameCharsetEnforced(bytes1 c) public {
         bool valid = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x2d;
         string memory name = string(abi.encodePacked("ab", c));
