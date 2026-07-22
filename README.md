@@ -40,8 +40,10 @@ demo/               end-to-end runners (local anvil + Arc Testnet)
 pnpm install
 node scripts/sync-abis.mjs      # after any contract change
 
-# contract tests (21 passing)
-pnpm test:contracts
+# tests + checks
+pnpm test:contracts             # 51 Foundry tests (unit + fuzz + invariant)
+pnpm test                       # 34 vitest tests (SDK, x402, stores)
+pnpm typecheck && pnpm lint     # tsc + biome (same gates as CI)
 
 # full e2e demo on a local anvil chain — boots everything:
 # naming → 50 x402 micropayments → screened $5 escrow → delivery →
@@ -73,18 +75,23 @@ Intent flow: *"Get me a market report, budget $5, release on delivery"* → the 
 
 ## Arc Testnet
 
+Full guide: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · operations: [docs/RUNBOOK.md](docs/RUNBOOK.md)
+
 ```bash
-# 1. deploy (USDC_ADDRESS = the Arc Testnet USDC ERC-20 address; fund the deployer from the Circle faucet)
+# 1. deploy — writes deployments/arc-testnet.json automatically
 cd contracts
-USDC_ADDRESS=<arc-usdc> forge script script/Deploy.s.sol \
-  --rpc-url $ARC_TESTNET_RPC_URL --broadcast --private-key $DEPLOYER_PRIVATE_KEY
+AGENTMESH_NETWORK=arc-testnet \
+USDC_ADDRESS=0x3600000000000000000000000000000000000000 \
+DISPUTE_WINDOW=3600 ARBITER_ADDRESS=<watcher> SCREENER_ADDRESS=<watcher> GATE_ADMIN_ADDRESS=<watcher> \
+forge script script/Deploy.s.sol \
+  --rpc-url https://rpc.testnet.arc.network --broadcast --private-key $DEPLOYER_PRIVATE_KEY
 
-# 2. record addresses in deployments/arc-testnet.json (see deployments/local.json for shape)
-
-# 3. run services + demo
+# 2. run services (docker compose up -d --build, or bare:)
 AGENTMESH_NETWORK=arc-testnet SELLER_PRIVATE_KEY=... pnpm dev:seller
 AGENTMESH_NETWORK=arc-testnet WATCHER_PRIVATE_KEY=... pnpm dev:watcher
-AGENTMESH_NETWORK=arc-testnet BUYER_PRIVATE_KEY=... pnpm demo:testnet   # prints explorer links
+
+# 3. smoke the whole loop (faucet-sized amounts; prints explorer links)
+AGENTMESH_NETWORK=arc-testnet BUYER_PRIVATE_KEY=... pnpm demo:testnet
 ```
 
 Note Arc's decimals gotcha: USDC is **18 decimals as native gas**, **6 decimals at the ERC-20 interface** — all AgentMesh amounts use the 6-decimal ERC-20 side.
@@ -101,7 +108,10 @@ Note Arc's decimals gotcha: USDC is **18 decimals as native gas**, **6 decimals 
 
 ## Security / honesty notes
 
-- Fallback screening (no Compliance Engine key) is **clearly labeled** in watcher logs — no pretend compliance.
-- The extension holds **no keys**; actions proxy through the dashboard's server-side wallet.
-- `AgentEscrow` uses OpenZeppelin `SafeERC20` + `ReentrancyGuard`; escrow release is impossible for screened-out sellers — funds fall back to dispute/refund paths.
+- x402 payments are **payer-bound**: server-issued single-use quotes + a payer signature over `quoteId‖txHash`; observed transfers can't be claimed by third parties, replays are rejected, and the replay set survives restarts (SQLite).
+- Fallback screening (no Compliance Engine key) is **clearly labeled** in watcher logs — no pretend compliance. Compliance-API outages **fail closed** (default-deny), never open.
+- Blocked sellers can never be paid — not even by the arbiter. `refundBlocked()` lets anyone return funds to the buyer, so compliance blocks can't strand money.
+- The extension holds **no keys**; actions proxy through the dashboard's `/api/action`, which requires a bearer token (`DASHBOARD_ACTION_TOKEN`) off-local.
+- `AgentEscrow`: OpenZeppelin `SafeERC20` + `ReentrancyGuard` + `Ownable2Step` + `Pausable` (pause blocks new jobs only — funds-out paths are never pausable). Invariant-tested: escrow balance always equals the sum of open jobs; no double payout.
+- Services are restart-safe (kill -9 drill in CI-adjacent testing): watcher resumes pending releases from durable state; seller keeps payment history and replay protection.
 - Demo keys are anvil's well-known development accounts; never use them beyond local testing.
