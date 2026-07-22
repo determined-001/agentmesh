@@ -1,9 +1,9 @@
+import { JOB_STATUS, meshFromEnv, paidFetch } from "@agentmesh/sdk";
+import { explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { type Address, isAddress } from "viem";
 import { z } from "zod";
-import { isAddress, type Address } from "viem";
-import { meshFromEnv, paidFetch, JOB_STATUS } from "@agentmesh/sdk";
-import { explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
 
 /** AgentMesh MCP server — the "agent brain" port.
  *  Connect any MCP-capable model (Claude, etc.) and it becomes a first-class
@@ -39,8 +39,13 @@ server.tool(
   { name: z.string(), endpoint: z.string().default(""), cardURI: z.string().default("") },
   async ({ name, endpoint, cardURI }) => {
     const tx = await mesh.registerAgent(name, endpoint, cardURI);
-    return json({ registered: `${name}.agent.arc`, wallet: myAddress, txHash: tx, explorer: explorerTxUrl(network, tx) });
-  }
+    return json({
+      registered: `${name}.agent.arc`,
+      wallet: myAddress,
+      txHash: tx,
+      explorer: explorerTxUrl(network, tx),
+    });
+  },
 );
 
 server.tool(
@@ -50,7 +55,7 @@ server.tool(
   async ({ name }) => {
     const { wallet, card } = await mesh.resolveAgent(name);
     return json({ name: `${name}.agent.arc`, wallet, card });
-  }
+  },
 );
 
 server.tool("list_agents", "List all agents registered in the AgentMesh registry.", {}, async () => {
@@ -66,7 +71,7 @@ server.tool(
     const target = addressOrName ? await toSellerAddress(addressOrName) : myAddress;
     const balance = await mesh.usdcBalance(target);
     return json({ address: target, balance: balance.toString(), formatted: formatUsd(balance) });
-  }
+  },
 );
 
 server.tool(
@@ -80,10 +85,14 @@ server.tool(
       status: response.status,
       body: body.length > 4000 ? body.slice(0, 4000) + "…" : body,
       paid: paid
-        ? { amount: formatUsd(paid.amount), txHash: paid.txHash, explorer: explorerTxUrl(network, paid.txHash) }
+        ? {
+            amount: formatUsd(paid.amount),
+            txHash: paid.txHash,
+            explorer: explorerTxUrl(network, paid.txHash),
+          }
         : "free (no payment was required)",
     });
-  }
+  },
 );
 
 server.tool(
@@ -103,8 +112,14 @@ server.tool(
       deadline: BigInt(Math.floor(Date.now() / 1000) + deadlineMinutes * 60),
       spec,
     });
-    return json({ jobId: jobId.toString(), seller: sellerAddr, amount: `$${amountUsd}`, txHash, explorer: explorerTxUrl(network, txHash) });
-  }
+    return json({
+      jobId: jobId.toString(),
+      seller: sellerAddr,
+      amount: `$${amountUsd}`,
+      txHash,
+      explorer: explorerTxUrl(network, txHash),
+    });
+  },
 );
 
 server.tool(
@@ -113,8 +128,13 @@ server.tool(
   { jobId: z.string() },
   async ({ jobId }) => {
     const job = await mesh.getJob(BigInt(jobId));
-    return json({ jobId, ...job, amountFormatted: formatUsd(job.amount), statusName: JOB_STATUS[job.status] });
-  }
+    return json({
+      jobId,
+      ...job,
+      amountFormatted: formatUsd(job.amount),
+      statusName: JOB_STATUS[job.status],
+    });
+  },
 );
 
 server.tool(
@@ -124,7 +144,7 @@ server.tool(
   async ({ jobId }) => {
     const tx = await mesh.releaseEscrow(BigInt(jobId));
     return json({ released: jobId, txHash: tx, explorer: explorerTxUrl(network, tx) });
-  }
+  },
 );
 
 server.tool(
@@ -134,7 +154,7 @@ server.tool(
   async ({ jobId }) => {
     const tx = await mesh.disputeJob(BigInt(jobId));
     return json({ disputed: jobId, txHash: tx, explorer: explorerTxUrl(network, tx) });
-  }
+  },
 );
 
 server.tool(
@@ -145,7 +165,7 @@ server.tool(
     if (!isAddress(address)) throw new Error(`not an address: ${address}`);
     const tx = await mesh.setAllowed(address, allowed, reason);
     return json({ screened: address, allowed, txHash: tx });
-  }
+  },
 );
 
 server.tool(
@@ -156,7 +176,7 @@ server.tool(
     const { card } = await mesh.resolveAgent(sellerName);
     const res = await fetch(`${card.endpoint}/jobs/${jobId}/deliverable`);
     return json(await res.json());
-  }
+  },
 );
 
 const transport = new StdioServerTransport();

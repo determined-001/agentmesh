@@ -1,6 +1,6 @@
-import { parseAbiItem, type Address } from "viem";
-import { meshFromEnv, JOB_STATUS } from "@agentmesh/sdk";
+import { JOB_STATUS, meshFromEnv } from "@agentmesh/sdk";
 import { formatUsd } from "@agentmesh/shared";
+import { type Address, parseAbiItem } from "viem";
 
 /** AgentMesh watcher — the automation layer.
  *  1. Screens sellers on JobCreated and pushes verdicts to the ComplianceGate
@@ -15,7 +15,7 @@ const DENYLIST = new Set(
   (process.env.DENYLIST ?? "")
     .split(",")
     .map((a) => a.trim().toLowerCase())
-    .filter(Boolean)
+    .filter(Boolean),
 );
 
 const { client: mesh } = meshFromEnv("WATCHER_PRIVATE_KEY");
@@ -58,7 +58,7 @@ async function screen(address: Address): Promise<{ allowed: boolean; reason: str
 }
 
 const jobCreatedEvent = parseAbiItem(
-  "event JobCreated(uint256 indexed jobId, address indexed buyer, address indexed seller, uint256 amount, uint64 deadline, bytes32 specHash)"
+  "event JobCreated(uint256 indexed jobId, address indexed buyer, address indexed seller, uint256 amount, uint64 deadline, bytes32 specHash)",
 );
 const jobDeliveredEvent = parseAbiItem("event JobDelivered(uint256 indexed jobId, bytes32 deliverableHash)");
 
@@ -98,7 +98,7 @@ async function tick() {
           const verdict = await screen(seller);
           const tx = await mesh.setAllowed(seller, verdict.allowed, verdict.reason);
           console.log(
-            `[watcher] screened ${seller}: ${verdict.allowed ? "ALLOWED" : "BLOCKED"} (${verdict.reason}) tx ${tx}`
+            `[watcher] screened ${seller}: ${verdict.allowed ? "ALLOWED" : "BLOCKED"} (${verdict.reason}) tx ${tx}`,
           );
         }
       }
@@ -121,7 +121,9 @@ async function tick() {
       if (status === "Delivered" && now >= job.deliveredAt + disputeWindow) {
         try {
           const tx = await mesh.releaseEscrow(jobId);
-          console.log(`[watcher] job #${id} AUTO-RELEASED ${formatUsd(job.amount)} → ${job.seller} (tx ${tx})`);
+          console.log(
+            `[watcher] job #${id} AUTO-RELEASED ${formatUsd(job.amount)} → ${job.seller} (tx ${tx})`,
+          );
           tracked.delete(id);
         } catch (err) {
           console.error(`[watcher] release #${id} failed:`, (err as Error).message);
