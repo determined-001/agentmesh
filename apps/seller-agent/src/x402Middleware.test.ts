@@ -60,15 +60,15 @@ describe("verifyPaymentClaim", () => {
 
   beforeEach(() => {
     state = createX402State();
-    state.quotes.set("q1", { resource: "/api/headline", price: PRICE, validUntil: Date.now() + 60_000 });
+    state.setQuote("q1", { resource: "/api/headline", price: PRICE, validUntil: Date.now() + 60_000 });
   });
 
   it("accepts a valid signed claim and records it", async () => {
     const res = await verifyPaymentClaim(await makePayload(), "/api/headline", PRICE, { ...base, state });
     expect(res).toEqual({ ok: true, idempotent: false });
-    expect(state.consumed.get("q1")).toBe(TX.toLowerCase());
-    expect(state.usedTxHashes.has(TX.toLowerCase())).toBe(true);
-    expect(state.quotes.has("q1")).toBe(false);
+    expect(state.getConsumed("q1")).toBe(TX.toLowerCase());
+    expect(state.hasUsedTx(TX.toLowerCase())).toBe(true);
+    expect(state.getQuote("q1")).toBeUndefined();
   });
 
   it("rejects a claim signed by someone other than the payer", async () => {
@@ -91,7 +91,7 @@ describe("verifyPaymentClaim", () => {
 
   it("replayed txHash against a fresh quote is rejected", async () => {
     await verifyPaymentClaim(await makePayload(), "/api/headline", PRICE, { ...base, state });
-    state.quotes.set("q2", { resource: "/api/headline", price: PRICE, validUntil: Date.now() + 60_000 });
+    state.setQuote("q2", { resource: "/api/headline", price: PRICE, validUntil: Date.now() + 60_000 });
     const res = await verifyPaymentClaim(await makePayload({ quoteId: "q2" }), "/api/headline", PRICE, {
       ...base,
       state,
@@ -125,7 +125,7 @@ describe("verifyPaymentClaim", () => {
     });
     expect(unknown).toMatchObject({ ok: false, error: "unknown or expired quote" });
 
-    state.quotes.set("old", { resource: "/api/headline", price: PRICE, validUntil: Date.now() - 1 });
+    state.setQuote("old", { resource: "/api/headline", price: PRICE, validUntil: Date.now() - 1 });
     const expired = await verifyPaymentClaim(await makePayload({ quoteId: "old" }), "/api/headline", PRICE, {
       ...base,
       state,

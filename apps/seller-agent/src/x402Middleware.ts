@@ -29,16 +29,45 @@ export interface X402Options {
   state?: X402State; // injectable for tests; defaults to module singleton
 }
 
-/** Quote/claim bookkeeping. In-memory for now — durable store lands with the
- *  persistence phase; the verification logic is already store-shaped. */
+export interface Quote {
+  resource: string;
+  price: bigint;
+  validUntil: number;
+}
+
+/** Quote/claim bookkeeping, store-shaped so implementations can be in-memory
+ *  (tests, dev) or durable (SQLite in the seller — replay protection must
+ *  survive restarts). */
 export interface X402State {
-  quotes: Map<string, { resource: string; price: bigint; validUntil: number }>;
-  consumed: Map<string, `0x${string}`>; // quoteId → txHash that claimed it
-  usedTxHashes: Set<string>;
+  getQuote(id: string): Quote | undefined;
+  setQuote(id: string, q: Quote): void;
+  deleteQuote(id: string): void;
+  /** txHash that already claimed this quote, if any. */
+  getConsumed(id: string): `0x${string}` | undefined;
+  setConsumed(id: string, txHash: `0x${string}`): void;
+  hasUsedTx(txHash: string): boolean;
+  addUsedTx(txHash: string): void;
+  pruneQuotes(now: number): void;
 }
 
 export function createX402State(): X402State {
-  return { quotes: new Map(), consumed: new Map(), usedTxHashes: new Set() };
+  const quotes = new Map<string, Quote>();
+  const consumed = new Map<string, `0x${string}`>();
+  const usedTxHashes = new Set<string>();
+  return {
+    getQuote: (id) => quotes.get(id),
+    setQuote: (id, q) => void quotes.set(id, q),
+    deleteQuote: (id) => void quotes.delete(id),
+    getConsumed: (id) => consumed.get(id),
+    setConsumed: (id, tx) => void consumed.set(id, tx),
+    hasUsedTx: (tx) => usedTxHashes.has(tx),
+    addUsedTx: (tx) => void usedTxHashes.add(tx),
+    pruneQuotes: (now) => {
+      for (const [id, q] of quotes) {
+        if (now > q.validUntil) quotes.delete(id);
+      }
+    },
+  };
 }
 
 const defaultState = createX402State();
@@ -73,17 +102,17 @@ export async function verifyPaymentClaim(
 
   // Idempotent re-claim: same quote, same tx, valid signature → serve again
   // without re-recording (client recovering from a lost response).
-  const claimedBy = state.consumed.get(quoteId);
+  const claimedBy = state.getConsumed(quoteId);
   if (claimedBy) {
     if (claimedBy === txHash.toLowerCase()) return { ok: true, idempotent: true };
     return { ok: false, status: 402, error: "quote already claimed" };
   }
 
-  const quote = state.quotes.get(quoteId);
+  const quote = state.getQuote(quoteId);
   if (!quote) return { ok: false, status: 402, error: "unknown or expired quote" };
   if (Date.now() > quote.validUntil) return { ok: false, status: 402, error: "quote expired" };
   if (quote.resource !== resource) return { ok: false, status: 402, error: "quote is for another resource" };
-  if (state.usedTxHashes.has(txHash.toLowerCase())) {
+  if (state.hasUsedTx(txHash.toLowerCase())) {
     return { ok: false, status: 402, error: "payment already used" };
   }
 
@@ -105,9 +134,9 @@ export async function verifyPaymentClaim(
   );
   if (!match) return { ok: false, status: 402, error: "no matching USDC transfer in tx" };
 
-  state.usedTxHashes.add(txHash.toLowerCase());
-  state.consumed.set(quoteId, txHash.toLowerCase() as `0x${string}`);
-  state.quotes.delete(quoteId);
+  state.addUsedTx(txHash.toLowerCase());
+  state.setConsumed(quoteId, txHash.toLowerCase() as `0x${string}`);
+  state.deleteQuote(quoteId);
   return { ok: true, idempotent: false };
 }
 
@@ -115,13 +144,6 @@ type GetReceipt = (hash: `0x${string}`) => Promise<{
   status: string;
   logs: Parameters<typeof parseEventLogs>[0]["logs"];
 }>;
-
-function pruneQuotes(state: X402State) {
-  const now = Date.now();
-  for (const [id, q] of state.quotes) {
-    if (now > q.validUntil) state.quotes.delete(id);
-  }
-}
 
 /** Hono middleware implementing the x402 handshake with on-chain USDC settlement
  *  verification (agentmesh-direct scheme). `price` is USDC base units (6 dp). */
@@ -132,10 +154,10 @@ export function priced(price: bigint, description: string, opts: X402Options) {
     const resource = new URL(c.req.url).pathname;
 
     if (!header) {
-      pruneQuotes(state);
+      state.pruneQuotes(Date.now());
       const quoteId = randomUUID();
       const validUntil = Date.now() + QUOTE_TTL_MS;
-      state.quotes.set(quoteId, { resource, price, validUntil });
+      state.setQuote(quoteId, { resource, price, validUntil });
       const requirements: PaymentRequirements = {
         x402Version: 1,
         scheme: "agentmesh-direct",
