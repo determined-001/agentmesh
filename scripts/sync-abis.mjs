@@ -1,6 +1,6 @@
 // Extracts contract ABIs from Foundry build output into packages/shared/src/abis
 // as typed `as const` TypeScript modules for viem.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 

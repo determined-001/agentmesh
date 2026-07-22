@@ -1,14 +1,14 @@
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
+  type Account,
   type Address,
   type Chain,
+  createPublicClient,
+  createWalletClient,
   type Hex,
+  http,
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
-  type Account,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { AgentWallet, WriteContractParams } from "./types.js";
