@@ -22,6 +22,10 @@ export interface PaymentRequirements {
   maxAmountRequired: string; // USDC base units (6 decimals), stringified
   resource: string;
   description: string;
+  /** Server-issued one-time quote id the payment must be bound to. */
+  quoteId: string;
+  /** Unix ms after which the quote (and any payment against it) is rejected. */
+  validUntil: number;
 }
 
 export interface PaymentPayload {
@@ -33,7 +37,18 @@ export interface PaymentPayload {
     from: Address;
     to: Address;
     amount: string; // USDC base units
+    /** Echo of the server's quoteId — one payment claims exactly one quote. */
+    quoteId: string;
+    /** Payer's signature over paymentSigMessage(quoteId, txHash). Binds the
+     *  claim to whoever controls `from`: a third party that merely observed
+     *  the transfer on-chain cannot present it as their own payment. */
+    signature: Hex;
   };
+}
+
+/** Canonical message the payer signs to claim a payment. */
+export function paymentSigMessage(quoteId: string, txHash: Hex): string {
+  return `agentmesh-x402|${quoteId}|${txHash}`;
 }
 
 /* Base64 helpers using only web-standard APIs (TextEncoder/atob/btoa) so this

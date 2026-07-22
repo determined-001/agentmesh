@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodePaymentHeader, encodePaymentHeader, type PaymentPayload } from "./x402.js";
+import { decodePaymentHeader, encodePaymentHeader, type PaymentPayload, paymentSigMessage } from "./x402.js";
 
 const payload: PaymentPayload = {
   x402Version: 1,
@@ -10,6 +10,8 @@ const payload: PaymentPayload = {
     from: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     amount: "1000",
+    quoteId: "q-123",
+    signature: "0xdeadbeef",
   },
 };
 
@@ -35,5 +37,13 @@ describe("payment header codec", () => {
 
   it("throws on garbage input", () => {
     expect(() => decodePaymentHeader("not base64 json!!!")).toThrow();
+  });
+});
+
+describe("paymentSigMessage", () => {
+  it("is deterministic and binds quote to tx", () => {
+    const m = paymentSigMessage("q-123", payload.payload.txHash);
+    expect(m).toBe(`agentmesh-x402|q-123|${payload.payload.txHash}`);
+    expect(paymentSigMessage("q-456", payload.payload.txHash)).not.toBe(m);
   });
 });
