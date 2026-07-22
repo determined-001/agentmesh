@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "demo:local": "tsx src/local.ts",
-    "demo:testnet": "tsx src/testnet.ts"
+    "demo:testnet": "tsx src/testnet.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@agentmesh/sdk": "workspace:*",
