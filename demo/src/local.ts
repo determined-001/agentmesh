@@ -1,8 +1,8 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { localAnvil, formatUsd, usd, type Deployment } from "@agentmesh/shared";
-import { AgentMeshClient, ViemEoaWallet, paidFetch, JOB_STATUS } from "@agentmesh/sdk";
+import { AgentMeshClient, JOB_STATUS, paidFetch, ViemEoaWallet } from "@agentmesh/sdk";
+import { type Deployment, formatUsd, localAnvil, usd } from "@agentmesh/shared";
 import type { Address, Hex } from "viem";
 
 /** End-to-end AgentMesh demo on a local anvil chain.
@@ -77,7 +77,11 @@ await waitFor("anvil rpc", async () => {
 const deploy = spawnSync(
   "forge",
   ["script", "script/Deploy.s.sol", "--rpc-url", RPC, "--broadcast", "--private-key", KEYS.deployer],
-  { cwd: join(ROOT, "contracts"), env: { ...process.env, DISPUTE_WINDOW: String(DISPUTE_WINDOW) }, encoding: "utf8" }
+  {
+    cwd: join(ROOT, "contracts"),
+    env: { ...process.env, DISPUTE_WINDOW: String(DISPUTE_WINDOW) },
+    encoding: "utf8",
+  },
 );
 if (deploy.status !== 0) {
   console.error(deploy.stdout, deploy.stderr);
@@ -110,7 +114,15 @@ const sellerAddr = await sellerWallet.getAddress();
 // Fund BuyerBot with mock USDC (on Arc Testnet this comes from the Circle faucet).
 await deployerMesh.wallet.writeContract({
   address: deployment.usdc,
-  abi: [{ type: "function", name: "mint", inputs: [{ type: "address" }, { type: "uint256" }], outputs: [], stateMutability: "nonpayable" }],
+  abi: [
+    {
+      type: "function",
+      name: "mint",
+      inputs: [{ type: "address" }, { type: "uint256" }],
+      outputs: [],
+      stateMutability: "nonpayable",
+    },
+  ],
   functionName: "mint",
   args: [buyerAddr, usd("1000")],
 });
@@ -118,7 +130,12 @@ console.log(`funded BuyerBot ${buyerAddr} with $1000 USDC`);
 
 // ---------- 2. start services ----------
 banner("2/7 start DataAgent (seller) + watcher");
-const svcEnv = { ...process.env, AGENTMESH_NETWORK: "local", DISPUTE_WINDOW: String(DISPUTE_WINDOW), POLL_MS: "1000" };
+const svcEnv = {
+  ...process.env,
+  AGENTMESH_NETWORK: "local",
+  DISPUTE_WINDOW: String(DISPUTE_WINDOW),
+  POLL_MS: "1000",
+};
 const seller = spawn("pnpm", ["--filter", "@agentmesh/seller-agent", "start"], {
   cwd: ROOT,
   env: { ...svcEnv, SELLER_PRIVATE_KEY: KEYS.seller, PORT: String(SELLER_PORT) },
@@ -134,7 +151,7 @@ const watcher = spawn("pnpm", ["--filter", "@agentmesh/watcher", "start"], {
 children.push(seller, watcher);
 
 await waitFor("databot registration", async () =>
-  (await buyerMesh.isRegistered("databot")) ? true : undefined
+  (await buyerMesh.isRegistered("databot")) ? true : undefined,
 );
 
 // ---------- 3. naming ----------

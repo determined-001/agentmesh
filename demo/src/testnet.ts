@@ -1,5 +1,5 @@
+import { AgentMeshClient, JOB_STATUS, paidFetch, readDeployment, ViemEoaWallet } from "@agentmesh/sdk";
 import { arcTestnet, explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
-import { AgentMeshClient, ViemEoaWallet, paidFetch, readDeployment, JOB_STATUS } from "@agentmesh/sdk";
 import type { Hex } from "viem";
 
 /** AgentMesh demo against Arc Testnet (chain id 5042002).
@@ -42,7 +42,7 @@ for (let i = 0; i < MICRO_CALLS; i++) {
   const { response, paid } = await paidFetch(
     mesh,
     `${SELLER_URL}/api/${i % 2 === 0 ? "headline" : "datapoint"}`,
-    { maxAmount: usd("0.01") }
+    { maxAmount: usd("0.01") },
   );
   if (response.status !== 200 || !paid) throw new Error(`x402 call ${i} failed (HTTP ${response.status})`);
   total += paid.amount;
@@ -71,4 +71,6 @@ for (;;) {
   if (status === "Refunded" || status === "Disputed") break;
   await sleep(4000);
 }
-console.log(`\nfinal balances — buyer ${formatUsd(await mesh.usdcBalance())}, seller ${formatUsd(await mesh.usdcBalance(sellerAddr))}`);
+console.log(
+  `\nfinal balances — buyer ${formatUsd(await mesh.usdcBalance())}, seller ${formatUsd(await mesh.usdcBalance(sellerAddr))}`,
+);
