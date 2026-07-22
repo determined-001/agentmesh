@@ -6,6 +6,10 @@
   "description": "Compliant agent-to-agent settlement layer on Arc — named agent wallets, x402 micropayments, screened escrow, automated watchers.",
   "scripts": {
     "build": "pnpm -r --filter './packages/*' build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
     "test:contracts": "cd contracts && forge test",
     "demo:local": "pnpm --filter @agentmesh/demo demo:local",
     "demo:testnet": "pnpm --filter @agentmesh/demo demo:testnet",
@@ -17,5 +21,9 @@
   "packageManager": "pnpm@10.22.0",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.5",
+    "vitest": "^4.1.10"
   }
 }
