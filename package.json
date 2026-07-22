@@ -16,7 +16,8 @@
     "dev:dashboard": "pnpm --filter @agentmesh/dashboard dev",
     "dev:seller": "pnpm --filter @agentmesh/seller-agent dev",
     "dev:watcher": "pnpm --filter @agentmesh/watcher dev",
-    "mcp": "pnpm --filter @agentmesh/mcp-server start"
+    "mcp": "pnpm --filter @agentmesh/mcp-server build && pnpm --filter @agentmesh/mcp-server start",
+    "mcp:dev": "pnpm --filter @agentmesh/mcp-server dev"
   },
   "packageManager": "pnpm@10.22.0",
   "engines": {
