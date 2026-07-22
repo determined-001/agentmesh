@@ -44,7 +44,12 @@ describe("checkAgentEndpoint", () => {
   });
 
   it("rejects private IPv6 literals", () => {
-    for (const u of ["http://[::1]/x", "http://[fe80::1]/x", "http://[fd00::1]/x", "http://[::ffff:127.0.0.1]/x"]) {
+    for (const u of [
+      "http://[::1]/x",
+      "http://[fe80::1]/x",
+      "http://[fd00::1]/x",
+      "http://[::ffff:127.0.0.1]/x",
+    ]) {
       expect(checkAgentEndpoint(u).ok).toBe(false);
     }
   });
