@@ -27,7 +27,13 @@ const DENYLIST = new Set(
 const { client: mesh } = meshFromEnv("WATCHER_PRIVATE_KEY");
 const me = await mesh.wallet.getAddress();
 const disputeWindow = BigInt(mesh.deployment.disputeWindow);
-const store = new WatcherStore(process.env.WATCHER_DB ?? "data/watcher.sqlite", mesh.deployment.agentEscrow);
+// Scoped to escrow address + genesis hash so a chain reset with deterministic
+// addresses (fresh anvil) can't resurrect stale tracking state.
+const genesis = (await mesh.publicClient.getBlock({ blockNumber: 0n })).hash;
+const store = new WatcherStore(
+  process.env.WATCHER_DB ?? "data/watcher.sqlite",
+  `${mesh.deployment.agentEscrow}|${genesis}`,
+);
 
 log.info({ wallet: me, disputeWindow: Number(disputeWindow) }, "watcher starting");
 log.info(

@@ -1,7 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import type { Address } from "viem";
 
 /** Durable watcher state: screening verdicts, tracked job ids, block cursor.
  *  Without this, a restart forgot every job older than the rescan window and
@@ -12,7 +11,10 @@ import type { Address } from "viem";
 export class WatcherStore {
   private db: Database.Database;
 
-  constructor(path: string, escrow: Address) {
+  /** `scope` must uniquely identify the deployment instance — escrow address
+   *  alone is NOT enough: deterministic local redeploys (fresh anvil chain,
+   *  same nonce) reuse addresses, so include the chain's genesis hash. */
+  constructor(path: string, scope: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
@@ -21,10 +23,10 @@ export class WatcherStore {
       CREATE TABLE IF NOT EXISTS screened (address TEXT PRIMARY KEY, allowed INTEGER NOT NULL, screenedAt INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS tracked (jobId TEXT PRIMARY KEY);
     `);
-    const stored = this.getMeta("escrow");
-    if (stored !== escrow.toLowerCase()) {
+    const stored = this.getMeta("scope");
+    if (stored !== scope.toLowerCase()) {
       if (stored) this.db.exec("DELETE FROM screened; DELETE FROM tracked; DELETE FROM meta;");
-      this.setMeta("escrow", escrow.toLowerCase());
+      this.setMeta("scope", scope.toLowerCase());
     }
   }
 
