@@ -10,12 +10,20 @@ Full plan: `~/.claude/plans/virtual-seeking-piglet.md` · Deploy steps:
 
 ---
 
-## Phase 5 — Arc Testnet launch (blocked on faucet)
+## Phase 5 — Arc Testnet launch
 
-- [ ] **Fund 4 role EOAs** from <https://faucet.circle.com> (Arc Testnet).
-      ~1 USDC/day per address — start dripping days ahead. Roles:
-      deployer, buyer, seller, watcher (keys must be distinct — SDK enforces
-      this off-local).
+**Signer = Circle agent wallets** (Circle Developer-Controlled Wallets). The
+Circle API key is being obtained; once it lands, set `WALLET_PROVIDER=circle`
+plus `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` / `CIRCLE_WALLET_ID` /
+`CIRCLE_WALLET_ADDRESS` and the stack signs with Circle wallets — no code
+change. The EOA path stays only as the local-demo fallback.
+
+- [ ] **Obtain Circle API key** (Developer Console) — the one gate on the whole
+      Circle path. Create the developer-controlled wallets there.
+- [ ] **Fund the agent wallets** from <https://faucet.circle.com> (Arc Testnet),
+      ~1 USDC/day per address. USDC is also the gas token on Arc, so one asset
+      funds everything. Roles: buyer, seller, watcher (+ deployer for the
+      one-shot deploy).
 - [ ] **Deploy contracts** — one command in [DEPLOYMENT.md](DEPLOYMENT.md) §2.
       Writes `deployments/arc-testnet.json` (commit it) and hands every
       privileged role to the watcher address.
@@ -33,9 +41,9 @@ Full plan: `~/.claude/plans/virtual-seeking-piglet.md` · Deploy steps:
       `docs/testnet-verification.md` (create it).
 - [ ] **48h unattended soak** — services pointed at testnet, watch pino logs,
       induce ≥1 restart of each and confirm recovery.
-- [ ] **Circle integration smoke** (floats — do whenever the API key arrives):
-      `WALLET_PROVIDER=circle` wallet path + `CIRCLE_COMPLIANCE_API_KEY`
-      screening. All behind env flags; nothing else depends on it.
+- [ ] **Circle Compliance Engine screening** — set `CIRCLE_COMPLIANCE_API_KEY`
+      so the watcher screens sellers via Circle instead of the local denylist
+      fallback. Same key family as the wallets.
 
 ## Phase 6 — ops (not blocked; can do anytime)
 
