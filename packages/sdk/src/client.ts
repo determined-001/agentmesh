@@ -206,6 +206,19 @@ export class AgentMeshClient {
     return tx;
   }
 
+  /** Compliance escape hatch: refunds the buyer of a Delivered/Disputed job
+   *  whose seller has since failed screening. Callable by anyone. */
+  async refundBlocked(jobId: bigint): Promise<Hex> {
+    const tx = await this.wallet.writeContract({
+      address: this.deployment.agentEscrow,
+      abi: agentEscrowAbi,
+      functionName: "refundBlocked",
+      args: [jobId],
+    });
+    await this.wallet.waitForReceipt(tx);
+    return tx;
+  }
+
   async getJob(jobId: bigint): Promise<EscrowJob> {
     return (await this.publicClient.readContract({
       address: this.deployment.agentEscrow,
