@@ -17,7 +17,8 @@
     "dev:seller": "pnpm --filter @agentmesh/seller-agent dev",
     "dev:watcher": "pnpm --filter @agentmesh/watcher dev",
     "mcp": "pnpm --filter @agentmesh/mcp-server build && pnpm --filter @agentmesh/mcp-server start",
-    "mcp:dev": "pnpm --filter @agentmesh/mcp-server dev"
+    "mcp:dev": "pnpm --filter @agentmesh/mcp-server dev",
+    "circle:setup": "node scripts/circle-setup.mjs"
   },
   "packageManager": "pnpm@10.22.0",
   "engines": {
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
+    "@circle-fin/developer-controlled-wallets": "^9.0.0",
     "vitest": "^4.1.10"
   }
 }
