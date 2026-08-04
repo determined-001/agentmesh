@@ -77,6 +77,18 @@ Intent flow: *"Get me a market report, budget $5, release on delivery"* → the 
 
 Full guide: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · operations: [docs/RUNBOOK.md](docs/RUNBOOK.md)
 
+### Deployed contracts
+
+Live on Arc Testnet (chain id `5042002`), verified on ArcScan. Happy path,
+dispute→arbiter, and blocked-seller→`refundBlocked` all exercised end-to-end
+against these — see [docs/testnet-verification.md](docs/testnet-verification.md).
+
+| Contract | Address |
+| --- | --- |
+| AgentRegistry | [`0xaF9F344839699B098F7E469669d3F81e2B39879A`](https://testnet.arcscan.app/address/0xaf9f344839699b098f7e469669d3f81e2b39879a) |
+| ComplianceGate | [`0x1a0fCa0e1f79Fb9F7003b111948Ce3b2be837F53`](https://testnet.arcscan.app/address/0x1a0fca0e1f79fb9f7003b111948ce3b2be837f53) |
+| AgentEscrow | [`0xace347d8d4ac669E7B1a6247042F4c00A1c4cf7B`](https://testnet.arcscan.app/address/0xace347d8d4ac669e7b1a6247042f4c00a1c4cf7b) |
+
 ```bash
 # 1. deploy — writes deployments/arc-testnet.json automatically
 cd contracts
