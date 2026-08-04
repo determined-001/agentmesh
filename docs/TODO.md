@@ -18,27 +18,30 @@ plus `CIRCLE_API_KEY` / `CIRCLE_ENTITY_SECRET` / `CIRCLE_WALLET_ID` /
 `CIRCLE_WALLET_ADDRESS` and the stack signs with Circle wallets — no code
 change. The EOA path stays only as the local-demo fallback.
 
-- [ ] **Obtain Circle API key** (Developer Console) — the one gate on the whole
+- [x] **Obtain Circle API key** (Developer Console) — the one gate on the whole
       Circle path. Create the developer-controlled wallets there.
-- [ ] **Fund the agent wallets** from <https://faucet.circle.com> (Arc Testnet),
+- [x] **Fund the agent wallets** from <https://faucet.circle.com> (Arc Testnet),
       ~1 USDC/day per address. USDC is also the gas token on Arc, so one asset
       funds everything. Roles: buyer, seller, watcher (+ deployer for the
       one-shot deploy).
-- [ ] **Deploy contracts** — one command in [DEPLOYMENT.md](DEPLOYMENT.md) §2.
+- [x] **Deploy contracts** — one command in [DEPLOYMENT.md](DEPLOYMENT.md) §2.
       Writes `deployments/arc-testnet.json` (commit it) and hands every
       privileged role to the watcher address.
       USDC = `0x3600000000000000000000000000000000000000` (6dp),
       `DISPUTE_WINDOW=3600`, `VERDICT_TTL=86400`.
-- [ ] **Try contract verification** on ArcScan (Blockscout-flavored;
+- [x] **Try contract verification** on ArcScan (Blockscout-flavored;
       `forge verify-contract --verifier blockscout --verifier-url https://testnet.arcscan.app/api`).
       If unsupported, note it in the artifact commit and move on.
-- [ ] **Run services** against testnet (docker compose, or `pnpm dev:seller` /
+      → All 3 contracts verified.
+- [x] **Run services** against testnet (docker compose, or `pnpm dev:seller` /
       `pnpm dev:watcher` with `AGENTMESH_NETWORK=arc-testnet`). Confirm
       `:4021/readyz` and `:4031/readyz` return 200.
-- [ ] **Full testnet e2e** — `pnpm demo:testnet`. Exercise: register, x402
-      micropayment, escrow → delivered → auto-release, dispute → arbiter,
-      blocked-seller → `refundBlocked`. Record tx hashes in
-      `docs/testnet-verification.md` (create it).
+- [x] **Full testnet e2e (happy path)** — `pnpm demo:testnet`. register, x402
+      micropayment, escrow → delivered → auto-release all confirmed on-chain,
+      see [testnet-verification.md](testnet-verification.md). Found + fixed
+      2 real bugs along the way (x402 signature verification rejected Circle
+      SCA wallets; unbounded eth_getLogs range growth on RPC failure).
+      Still open: dispute → arbiter, blocked-seller → `refundBlocked`.
 - [ ] **48h unattended soak** — services pointed at testnet, watch pino logs,
       induce ≥1 restart of each and confirm recovery.
 - [ ] **Circle Compliance Engine screening** — set `CIRCLE_COMPLIANCE_API_KEY`
