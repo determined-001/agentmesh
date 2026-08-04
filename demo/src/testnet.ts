@@ -1,6 +1,5 @@
-import { AgentMeshClient, JOB_STATUS, paidFetch, readDeployment, ViemEoaWallet } from "@agentmesh/sdk";
-import { arcTestnet, explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
-import type { Hex } from "viem";
+import { JOB_STATUS, meshFromEnv, paidFetch } from "@agentmesh/sdk";
+import { explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
 
 /** AgentMesh demo against Arc Testnet (chain id 5042002).
  *
@@ -14,21 +13,23 @@ import type { Hex } from "viem";
  *      (USDC is also the gas token on Arc — one asset funds everything;
  *      faucet dispenses ~1 USDC/day, hence the small default amounts here).
  *   3. Seller + watcher running:
- *        AGENTMESH_NETWORK=arc-testnet SELLER_PRIVATE_KEY=... pnpm dev:seller
- *        AGENTMESH_NETWORK=arc-testnet WATCHER_PRIVATE_KEY=... pnpm dev:watcher
+ *        AGENTMESH_NETWORK=arc-testnet pnpm dev:seller
+ *        AGENTMESH_NETWORK=arc-testnet pnpm dev:watcher
  *
- *  Env for this script: BUYER_PRIVATE_KEY; optional SELLER_URL, MICRO_CALLS,
- *  ESCROW_USD, ESCROW_WAIT_MS. */
+ *  Env for this script: AGENTMESH_NETWORK=arc-testnet plus a buyer wallet —
+ *  either BUYER_PRIVATE_KEY (EOA) or WALLET_PROVIDER=circle with
+ *  CIRCLE_BUYER_WALLET_ID/CIRCLE_BUYER_WALLET_ADDRESS (see walletFromEnv).
+ *  Optional: SELLER_URL, MICRO_CALLS, ESCROW_USD, ESCROW_WAIT_MS. */
 
 const MICRO_CALLS = Number(process.env.MICRO_CALLS ?? 5);
 const ESCROW_USD = process.env.ESCROW_USD ?? "0.25";
-const ESCROW_WAIT_MS = Number(process.env.ESCROW_WAIT_MS ?? 30 * 60_000);
+// Must exceed the deployed DISPUTE_WINDOW (3600s per DEPLOYMENT.md) plus
+// margin for watcher poll latency, or this always times out before the
+// watcher is even allowed to auto-release.
+const ESCROW_WAIT_MS = Number(process.env.ESCROW_WAIT_MS ?? 70 * 60_000);
 const SELLER_URL = process.env.SELLER_URL ?? "http://localhost:4021";
-const pk = process.env.BUYER_PRIVATE_KEY as Hex | undefined;
-if (!pk) throw new Error("set BUYER_PRIVATE_KEY");
 
-const deployment = readDeployment("arc-testnet");
-const mesh = new AgentMeshClient(arcTestnet, deployment, new ViemEoaWallet(pk, arcTestnet));
+const { client: mesh } = meshFromEnv("BUYER_PRIVATE_KEY");
 const me = await mesh.wallet.getAddress();
 const link = (tx: string) => explorerTxUrl("arc-testnet", tx);
 
