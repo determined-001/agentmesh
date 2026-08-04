@@ -11,7 +11,7 @@ import {
   X_PAYMENT_RESPONSE_HEADER,
 } from "@agentmesh/shared";
 import type { Context, Next } from "hono";
-import { type Address, parseEventLogs, verifyMessage } from "viem";
+import { type Address, parseEventLogs } from "viem";
 
 export interface PaymentRecord {
   ts: number;
@@ -83,7 +83,14 @@ export async function verifyPaymentClaim(
   payload: PaymentPayload,
   resource: string,
   price: bigint,
-  opts: { network: string; payTo: Address; usdc: Address; state: X402State; getReceipt: GetReceipt },
+  opts: {
+    network: string;
+    payTo: Address;
+    usdc: Address;
+    state: X402State;
+    getReceipt: GetReceipt;
+    verifySignature: VerifySignature;
+  },
 ): Promise<VerifyOk | VerifyFail> {
   const { txHash, from, to, amount, quoteId, signature } = payload.payload;
   const { state } = opts;
@@ -93,9 +100,12 @@ export async function verifyPaymentClaim(
   if (BigInt(amount) < price) return { ok: false, status: 402, error: "insufficient payment" };
 
   // Payer binding: only whoever controls `from` can claim this transfer.
+  // Must go through the client-bound verifier (ERC-6492/1271 aware) — plain
+  // viem `verifyMessage` only recovers ECDSA and rejects every smart-contract
+  // wallet (e.g. Circle SCA), signature format notwithstanding.
   let sigOk = false;
   try {
-    sigOk = await verifyMessage({ address: from, message: paymentSigMessage(quoteId, txHash), signature });
+    sigOk = await opts.verifySignature({ address: from, message: paymentSigMessage(quoteId, txHash), signature });
   } catch {
     sigOk = false;
   }
@@ -146,6 +156,8 @@ type GetReceipt = (hash: `0x${string}`) => Promise<{
   logs: Parameters<typeof parseEventLogs>[0]["logs"];
 }>;
 
+type VerifySignature = (params: { address: Address; message: string; signature: `0x${string}` }) => Promise<boolean>;
+
 /** Hono middleware implementing the x402 handshake with on-chain USDC settlement
  *  verification (agentmesh-direct scheme). `price` is USDC base units (6 dp). */
 export function priced(price: bigint, description: string, opts: X402Options) {
@@ -187,6 +199,7 @@ export function priced(price: bigint, description: string, opts: X402Options) {
       usdc: opts.mesh.deployment.usdc,
       state,
       getReceipt: (hash) => opts.mesh.publicClient.getTransactionReceipt({ hash }),
+      verifySignature: (p) => opts.mesh.publicClient.verifyMessage(p),
     });
     if (!verdict.ok) return c.json({ error: verdict.error }, verdict.status);
 

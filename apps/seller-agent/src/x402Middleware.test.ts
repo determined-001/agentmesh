@@ -1,5 +1,5 @@
 import { type PaymentPayload, paymentSigMessage, usdcAbi } from "@agentmesh/shared";
-import { type Address, encodeEventTopics, type Hex, numberToHex, padHex } from "viem";
+import { type Address, encodeEventTopics, type Hex, numberToHex, padHex, verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createX402State, verifyPaymentClaim, type X402State } from "./x402Middleware.js";
@@ -56,6 +56,7 @@ describe("verifyPaymentClaim", () => {
     payTo: PAY_TO,
     usdc: USDC,
     getReceipt: async () => receiptWithTransfer(payer.address, PAY_TO, PRICE),
+    verifySignature: verifyMessage,
   };
 
   beforeEach(() => {
