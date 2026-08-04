@@ -17,6 +17,10 @@ const log = createLogger("seller");
 
 const PORT = Number(process.env.PORT ?? 4021);
 const POLL_MS = Number(process.env.POLL_MS ?? 2000);
+// Caps eth_getLogs range per tick so a run of RPC failures can't snowball the
+// unprocessed range past whatever limit the RPC enforces — each tick makes
+// bounded progress instead of retrying an ever-growing range forever.
+const MAX_BLOCK_RANGE = BigInt(process.env.MAX_BLOCK_RANGE ?? 500);
 const AGENT_NAME = process.env.AGENT_NAME ?? "databot";
 const ENDPOINT = process.env.PUBLIC_ENDPOINT ?? `http://localhost:${PORT}`;
 
@@ -117,14 +121,15 @@ async function workEscrowJobs() {
     const latest = await mesh.publicClient.getBlockNumber();
     if (lastBlock === 0n) lastBlock = latest > 50n ? latest - 50n : 0n;
     if (latest < lastBlock) return;
+    const toBlock = latest - lastBlock > MAX_BLOCK_RANGE ? lastBlock + MAX_BLOCK_RANGE : latest;
     const logs = await mesh.publicClient.getLogs({
       address: mesh.deployment.agentEscrow,
       event: jobCreatedEvent,
       args: { seller: me },
       fromBlock: lastBlock,
-      toBlock: latest,
+      toBlock,
     });
-    lastBlock = latest + 1n;
+    lastBlock = toBlock + 1n;
     store.setCursor(lastBlock);
 
     for (const logEntry of logs) {

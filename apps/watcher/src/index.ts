@@ -17,6 +17,10 @@ const log = createLogger("watcher");
 
 const POLL_MS = Number(process.env.POLL_MS ?? 2000);
 const HEALTH_PORT = Number(process.env.WATCHER_HEALTH_PORT ?? 4031);
+// Caps eth_getLogs range per tick so a run of RPC failures can't snowball the
+// unprocessed range past whatever limit the RPC enforces — each tick makes
+// bounded progress instead of retrying an ever-growing range forever.
+const MAX_BLOCK_RANGE = BigInt(process.env.MAX_BLOCK_RANGE ?? 500);
 const DENYLIST = new Set(
   (process.env.DENYLIST ?? "")
     .split(",")
@@ -113,21 +117,22 @@ async function tick() {
     if (lastBlock === 0n) lastBlock = latest > 100n ? latest - 100n : 0n;
 
     if (latest >= lastBlock) {
+      const toBlock = latest - lastBlock > MAX_BLOCK_RANGE ? lastBlock + MAX_BLOCK_RANGE : latest;
       const [created, delivered] = await Promise.all([
         mesh.publicClient.getLogs({
           address: mesh.deployment.agentEscrow,
           event: jobCreatedEvent,
           fromBlock: lastBlock,
-          toBlock: latest,
+          toBlock,
         }),
         mesh.publicClient.getLogs({
           address: mesh.deployment.agentEscrow,
           event: jobDeliveredEvent,
           fromBlock: lastBlock,
-          toBlock: latest,
+          toBlock,
         }),
       ]);
-      lastBlock = latest + 1n;
+      lastBlock = toBlock + 1n;
       store.setCursor(lastBlock);
 
       for (const logEntry of created) {
