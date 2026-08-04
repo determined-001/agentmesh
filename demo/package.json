@@ -6,6 +6,8 @@
   "scripts": {
     "demo:local": "tsx src/local.ts",
     "demo:testnet": "tsx src/testnet.ts",
+    "demo:testnet-dispute": "tsx src/testnet-dispute.ts",
+    "demo:testnet-blocked": "tsx src/testnet-blocked.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
