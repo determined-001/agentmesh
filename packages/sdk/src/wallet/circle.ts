@@ -34,7 +34,10 @@ export class CircleWallet implements AgentWallet {
 
   constructor(config: CircleWalletConfig, chain: Chain) {
     this.config = config;
-    this.publicClient = createPublicClient({ chain, transport: http() });
+    this.publicClient = createPublicClient({
+      chain,
+      transport: http(undefined, { retryCount: 3, retryDelay: 300, timeout: 15_000 }),
+    });
   }
 
   private async sdk() {

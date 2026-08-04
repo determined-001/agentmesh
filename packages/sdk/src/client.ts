@@ -48,7 +48,14 @@ export class AgentMeshClient {
     readonly deployment: Deployment,
     readonly wallet: AgentWallet,
   ) {
-    this.publicClient = createPublicClient({ chain, transport: http(), pollingInterval: 500 });
+    // Explicit timeout/retry — without it a single slow RPC call can hang
+    // well past the services' readyz staleness threshold (5x poll interval),
+    // flapping readyz even though the process itself is healthy.
+    this.publicClient = createPublicClient({
+      chain,
+      transport: http(undefined, { retryCount: 3, retryDelay: 300, timeout: 15_000 }),
+      pollingInterval: 500,
+    });
   }
 
   // ---------- registry ----------
