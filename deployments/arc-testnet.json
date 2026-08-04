@@ -1,0 +1,10 @@
+{
+  "agentEscrow": "0xace347d8d4ac669E7B1a6247042F4c00A1c4cf7B",
+  "agentRegistry": "0xaF9F344839699B098F7E469669d3F81e2B39879A",
+  "chainId": 5042002,
+  "complianceGate": "0x1a0fCa0e1f79Fb9F7003b111948Ce3b2be837F53",
+  "deployedAtBlock": 55241869,
+  "disputeWindow": 3600,
+  "network": "arc-testnet",
+  "usdc": "0x3600000000000000000000000000000000000000"
+}
