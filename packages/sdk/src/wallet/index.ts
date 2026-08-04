@@ -14,13 +14,19 @@ export { ViemEoaWallet } from "./viemEoa.js";
 export function walletFromEnv(chain: Chain, privateKeyEnv = "PRIVATE_KEY"): AgentWallet {
   const provider = process.env.WALLET_PROVIDER ?? "eoa";
   if (provider === "circle") {
+    // Services share one .env (docker-compose env_file), so the wallet must be
+    // looked up per role — same pattern as privateKeyEnv on the EOA path.
+    // Falls back to the unprefixed CIRCLE_WALLET_ID/ADDRESS for single-role setups.
+    const role = privateKeyEnv.replace(/_PRIVATE_KEY$/, "");
     const apiKey = process.env.CIRCLE_API_KEY;
     const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
-    const walletId = process.env.CIRCLE_WALLET_ID;
-    const address = process.env.CIRCLE_WALLET_ADDRESS as `0x${string}` | undefined;
+    const walletId = process.env[`CIRCLE_${role}_WALLET_ID`] ?? process.env.CIRCLE_WALLET_ID;
+    const address = (process.env[`CIRCLE_${role}_WALLET_ADDRESS`] ?? process.env.CIRCLE_WALLET_ADDRESS) as
+      | `0x${string}`
+      | undefined;
     if (!apiKey || !entitySecret || !walletId || !address) {
       throw new Error(
-        "WALLET_PROVIDER=circle requires CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, CIRCLE_WALLET_ID, CIRCLE_WALLET_ADDRESS",
+        `WALLET_PROVIDER=circle requires CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET, and CIRCLE_${role}_WALLET_ID / CIRCLE_${role}_WALLET_ADDRESS (or CIRCLE_WALLET_ID / CIRCLE_WALLET_ADDRESS for a single shared wallet)`,
       );
     }
     return new CircleWallet({ apiKey, entitySecret, walletId, address }, chain);
