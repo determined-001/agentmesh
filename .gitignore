@@ -13,6 +13,7 @@ contracts/lib/
 *.tsbuildinfo
 data/
 extension.zip
+recovery/
 
 # local-only: repo instructions + git-identity hook (kept on disk, not tracked)
 CLAUDE.md
