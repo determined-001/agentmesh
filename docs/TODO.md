@@ -36,12 +36,13 @@ change. The EOA path stays only as the local-demo fallback.
 - [x] **Run services** against testnet (docker compose, or `pnpm dev:seller` /
       `pnpm dev:watcher` with `AGENTMESH_NETWORK=arc-testnet`). Confirm
       `:4021/readyz` and `:4031/readyz` return 200.
-- [x] **Full testnet e2e (happy path)** — `pnpm demo:testnet`. register, x402
-      micropayment, escrow → delivered → auto-release all confirmed on-chain,
-      see [testnet-verification.md](testnet-verification.md). Found + fixed
-      2 real bugs along the way (x402 signature verification rejected Circle
-      SCA wallets; unbounded eth_getLogs range growth on RPC failure).
-      Still open: dispute → arbiter, blocked-seller → `refundBlocked`.
+- [x] **Full testnet e2e** — happy path (`pnpm demo:testnet`), dispute →
+      arbiter (`pnpm demo:testnet-dispute`), blocked-seller → `refundBlocked`
+      (`pnpm demo:testnet-blocked`). All confirmed on-chain, see
+      [testnet-verification.md](testnet-verification.md). Found + fixed
+      3 real bugs along the way: x402 signature verification rejected Circle
+      SCA wallets; unbounded eth_getLogs range growth on RPC failure;
+      `refundBlocked()` had no SDK wrapper.
 - [ ] **48h unattended soak** — services pointed at testnet, watch pino logs,
       induce ≥1 restart of each and confirm recovery.
 - [ ] **Circle Compliance Engine screening** — set `CIRCLE_COMPLIANCE_API_KEY`

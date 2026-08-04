@@ -49,13 +49,39 @@ $0.25 job, buyerbot → databot.
 | Delivered | (event only, no separate tx recorded) |
 | Auto-released (after 3600s dispute window) | [0x3928c423...da554d6](https://testnet.arcscan.app/tx/0x3928c42355cc6d796da7f0d3f3aeff732a651a8b8c0b0a3a7c1272b70da554d6) |
 
-All 10 transactions above confirmed on-chain with `status: success`
+## Escrow job #2 — dispute → arbiter (`pnpm demo:testnet-dispute`)
+
+$0.05 job, buyerbot → databot. Buyer disputes within the window; watcher
+(arbiter) resolves in the seller's favor via `resolveDispute(jobId, true)`.
+
+| Step | Tx |
+| --- | --- |
+| Funded | [0xa0a7c820...e79ab9a](https://testnet.arcscan.app/tx/0xa0a7c820780f2e02acef2afbe9ff1abfaf1982dee7346294f70ea8606e79ab9a) |
+| Delivered | (event only, no separate tx recorded) |
+| Disputed | [0x17800eb8...843b0e7](https://testnet.arcscan.app/tx/0x17800eb8d030d3787f9ed3ef271eed5a5ce4d4967556b40dbdfcc245b843b0e7) |
+| Resolved (released to seller) | [0x8c902e82...adceb90](https://testnet.arcscan.app/tx/0x8c902e82841ab3d46d34f27ec0ee2e32fa145c4f0b1de274c1c047952adceb90) |
+
+## Escrow job #3 — blocked seller → `refundBlocked` (`pnpm demo:testnet-blocked`)
+
+$0.05 job, buyerbot → databot. Seller blocked mid-flight (simulated
+compliance hit); `deliver()` has no gate check so delivery still succeeds;
+`refundBlocked()` — permissionless — returns funds to the buyer since
+`release()` would revert `ComplianceBlocked`. Seller unblocked again
+afterward (`isAllowed` confirmed `true` post-test).
+
+| Step | Tx |
+| --- | --- |
+| Seller blocked | [0x3a418c6a...a5332e](https://testnet.arcscan.app/tx/0x3a418c6aaf257bfcab5272e833835be1735d7384c5339161aa390b7733a5332e) |
+| Funded | [0x3f7aab47...e1e4d0ad](https://testnet.arcscan.app/tx/0x3f7aab478bacc92e6bc343cf98a2057c0b855701f670bd38cf4adadea1e4d0ad) |
+| Delivered | (event only, no separate tx recorded) |
+| refundBlocked (buyer refunded) | [0xded32e3f...42a0515a](https://testnet.arcscan.app/tx/0xded32e3f2a31c9de762adc48d8cce8e9c87d9c9e34b29b7cb1c9f02842a0515a) |
+| Seller unblocked (restored) | [0xbed3c8bd...f7b7d37df](https://testnet.arcscan.app/tx/0xbed3c8bdb8e0940f12efb4f125e0725b2e4e4834c785ef71c0fe2a7f7b7d37df) |
+
+All 17 transactions above confirmed on-chain with `status: success`
 (`cast receipt <tx> status`).
 
 ## Not yet exercised
 
-- Dispute → arbiter resolution path.
-- Blocked-seller → `refundBlocked()` path.
 - Circle Compliance Engine screening (currently `local-allowlist-fallback`;
   needs `CIRCLE_COMPLIANCE_API_KEY`).
 - 48h unattended soak.
@@ -90,3 +116,7 @@ All 10 transactions above confirmed on-chain with `status: success`
    than the deployed `DISPUTE_WINDOW` (3600s = 60 min)**, so the script was
    guaranteed to time out before the watcher was even allowed to
    auto-release. Raised the default to 70 minutes.
+6. **`refundBlocked()` had no SDK wrapper**, despite being the documented
+   compliance escape hatch (`RUNBOOK.md`, contract NatSpec) — nobody could
+   actually call it without hand-rolling a raw contract call. Added
+   `AgentMeshClient.refundBlocked(jobId)`.
