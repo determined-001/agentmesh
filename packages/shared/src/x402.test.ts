@@ -38,6 +38,33 @@ describe("payment header codec", () => {
   it("throws on garbage input", () => {
     expect(() => decodePaymentHeader("not base64 json!!!")).toThrow();
   });
+
+  /** Regression: these are valid base64 JSON, so they used to sail past the
+   *  decoder and blow up downstream on `.toLowerCase()` / `BigInt()` — every
+   *  one of them produced an HTTP 500 and a stack trace instead of a 400. */
+  it("rejects structurally invalid payloads instead of passing them through", () => {
+    const b64 = (v: unknown) => Buffer.from(JSON.stringify(v), "utf8").toString("base64");
+    const cases: Record<string, unknown> = {
+      "empty object": {},
+      "missing payload": { scheme: "agentmesh-direct", network: "local" },
+      "empty payload": { scheme: "agentmesh-direct", network: "local", payload: {} },
+      "non-numeric amount": { ...payload, payload: { ...payload.payload, amount: "abc" } },
+      "numeric to (type confusion)": { ...payload, payload: { ...payload.payload, to: 123 } },
+      "short txHash": { ...payload, payload: { ...payload.payload, txHash: "0x1" } },
+      "non-hex signature": { ...payload, payload: { ...payload.payload, signature: "nope" } },
+      "wrong scheme": { ...payload, scheme: "some-other-scheme" },
+      "empty quoteId": { ...payload, payload: { ...payload.payload, quoteId: "" } },
+    };
+    for (const [label, value] of Object.entries(cases)) {
+      expect(() => decodePaymentHeader(b64(value)), label).toThrow();
+    }
+  });
+
+  it("accepts a payload without an explicit x402Version", () => {
+    const { x402Version: _omitted, ...rest } = payload;
+    const b64 = Buffer.from(JSON.stringify(rest), "utf8").toString("base64");
+    expect(decodePaymentHeader(b64).x402Version).toBe(1);
+  });
 });
 
 describe("paymentSigMessage", () => {

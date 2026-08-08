@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { z } from "zod";
 
 /** Wire types for AgentMesh's x402-compatible payment handshake.
  *
@@ -71,6 +72,31 @@ export function encodePaymentHeader(p: PaymentPayload): string {
   return utf8ToBase64(JSON.stringify(p));
 }
 
+const hex = (label: string) =>
+  z.string().regex(/^0x[0-9a-fA-F]*$/, `${label} must be a 0x-prefixed hex string`);
+
+/** Shape of an X-PAYMENT header. Every field arrives from an unauthenticated
+ *  caller, so the header is parsed rather than cast: without this, a payload
+ *  like `{}` or `{"payload":{"amount":"abc"}}` reached code that called
+ *  `.toLowerCase()` and `BigInt()` on it and threw an unhandled TypeError,
+ *  turning any malformed header into a 500 and a stack trace in the logs. */
+export const paymentPayloadSchema = z.object({
+  x402Version: z.number().int().nonnegative().optional(),
+  scheme: z.literal("agentmesh-direct"),
+  network: z.string().min(1),
+  payload: z.object({
+    txHash: hex("txHash").length(66),
+    from: hex("from").length(42),
+    to: hex("to").length(42),
+    amount: z.string().regex(/^\d+$/, "amount must be a decimal base-unit string"),
+    quoteId: z.string().min(1).max(200),
+    signature: hex("signature"),
+  }),
+});
+
+/** @throws if the header is not valid base64, not JSON, or not a well-formed
+ *  payload. Callers turn the throw into a 400. */
 export function decodePaymentHeader(header: string): PaymentPayload {
-  return JSON.parse(base64ToUtf8(header)) as PaymentPayload;
+  const parsed = paymentPayloadSchema.parse(JSON.parse(base64ToUtf8(header)));
+  return { x402Version: parsed.x402Version ?? 1, ...parsed } as PaymentPayload;
 }
