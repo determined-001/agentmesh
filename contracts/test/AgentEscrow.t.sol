@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {AgentEscrow} from "../src/AgentEscrow.sol";
 import {ComplianceGate} from "../src/ComplianceGate.sol";
 import {MockUSDC} from "../src/mocks/MockUSDC.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
@@ -21,12 +22,16 @@ contract AgentEscrowTest is Test {
     address watcher = makeAddr("watcher");
 
     uint64 constant DISPUTE_WINDOW = 1 hours;
+    uint64 constant RESOLVE_TIMEOUT = 7 days;
+    uint48 constant ADMIN_DELAY = 2 days;
     uint256 constant AMOUNT = 5_000_000; // $5, 6 decimals
 
     function setUp() public {
         usdc = new MockUSDC();
-        gate = new ComplianceGate(arbiter);
-        escrow = new AgentEscrow(IERC20(address(usdc)), IComplianceGate(address(gate)), DISPUTE_WINDOW, arbiter);
+        gate = new ComplianceGate(ADMIN_DELAY, arbiter, arbiter);
+        escrow = new AgentEscrow(
+            IERC20(address(usdc)), IComplianceGate(address(gate)), DISPUTE_WINDOW, RESOLVE_TIMEOUT, arbiter
+        );
 
         usdc.mint(buyer, 100_000_000);
         vm.prank(buyer);
@@ -329,7 +334,7 @@ contract AgentEscrowTest is Test {
     // ── gate swap ───────────────────────────────────────────────────────
 
     function test_SetGateSwapsAndEmits() public {
-        ComplianceGate newGate = new ComplianceGate(arbiter);
+        ComplianceGate newGate = new ComplianceGate(ADMIN_DELAY, arbiter, arbiter);
         vm.prank(arbiter);
         vm.expectEmit(true, true, false, true);
         emit AgentEscrow.GateChanged(address(gate), address(newGate));
@@ -395,5 +400,182 @@ contract AgentEscrowTest is Test {
             escrow.dispute(jobId); // inside window: dispute always allowed
             // and third-party release must have been impossible at this instant
         }
+    }
+
+    // ── griefing: unscreened seller is not a blocked seller ─────────────
+
+    address unscreened = makeAddr("unscreenedSeller");
+
+    function _deliveredJobFor(address seller_) internal returns (uint256 jobId) {
+        vm.prank(buyer);
+        jobId = escrow.createJob(seller_, AMOUNT, uint64(block.timestamp + 1 days), keccak256("spec"));
+        vm.prank(seller_);
+        escrow.deliver(jobId, keccak256("report"));
+    }
+
+    /// Regression: a third party used to be able to cancel a delivered job just
+    /// because the screener had not reached the seller yet — during the gap
+    /// after delivery, or for as long as the screening provider was down. The
+    /// seller delivered the work and was paid nothing.
+    function test_RefundBlocked_RevertsForUnscreenedSeller() public {
+        uint256 jobId = _deliveredJobFor(unscreened);
+        assertFalse(gate.isAllowed(unscreened));
+        assertFalse(gate.isBlocked(unscreened));
+
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(abi.encodeWithSelector(AgentEscrow.SellerNotBlocked.selector, unscreened));
+        escrow.refundBlocked(jobId);
+
+        assertEq(uint8(escrow.getJob(jobId).status), uint8(AgentEscrow.JobStatus.Delivered));
+    }
+
+    function test_RefundBlocked_RevertsForStaleVerdict() public {
+        vm.startPrank(arbiter);
+        gate.setVerdictTtl(1 days);
+        gate.setAllowed(unscreened, true, keccak256("clean"));
+        vm.stopPrank();
+
+        uint256 jobId = _deliveredJobFor(unscreened);
+        vm.warp(block.timestamp + 2 days);
+
+        vm.expectRevert(abi.encodeWithSelector(AgentEscrow.SellerNotBlocked.selector, unscreened));
+        escrow.refundBlocked(jobId);
+    }
+
+    // ── refundUnresolved: the universal timeout backstop ────────────────
+
+    function test_RefundUnresolved_RevertsBeforeTimeout() public {
+        uint256 jobId = _deliveredJobFor(unscreened);
+        vm.warp(block.timestamp + RESOLVE_TIMEOUT - 1);
+        vm.expectRevert(AgentEscrow.ResolveTimeoutNotPassed.selector);
+        escrow.refundUnresolved(jobId);
+    }
+
+    /// The escape hatch for the state the stricter refundBlocked creates: an
+    /// unscreened seller can neither be released to nor compliance-refunded, so
+    /// without a timeout that job would be locked forever.
+    function test_RefundUnresolved_RescuesUnscreenedDeliveredJob() public {
+        uint256 before = usdc.balanceOf(buyer);
+        uint256 jobId = _deliveredJobFor(unscreened);
+
+        vm.expectRevert(abi.encodeWithSelector(AgentEscrow.ComplianceBlocked.selector, unscreened));
+        vm.prank(buyer);
+        escrow.release(jobId);
+
+        vm.warp(block.timestamp + RESOLVE_TIMEOUT + 1);
+        vm.expectEmit(true, false, false, false);
+        emit AgentEscrow.JobRefundedTimeout(jobId);
+        escrow.refundUnresolved(jobId); // permissionless
+        assertEq(usdc.balanceOf(buyer), before);
+        assertEq(uint8(escrow.getJob(jobId).status), uint8(AgentEscrow.JobStatus.Refunded));
+    }
+
+    /// An arbiter that never resolves must not be able to strand funds.
+    function test_RefundUnresolved_RescuesAbandonedDispute() public {
+        uint256 before = usdc.balanceOf(buyer);
+        uint256 jobId = _createJob();
+        vm.prank(seller);
+        escrow.deliver(jobId, keccak256("report"));
+        vm.prank(buyer);
+        escrow.dispute(jobId);
+
+        vm.warp(block.timestamp + RESOLVE_TIMEOUT + 1);
+        escrow.refundUnresolved(jobId);
+        assertEq(usdc.balanceOf(buyer), before);
+        assertEq(uint8(escrow.getJob(jobId).status), uint8(AgentEscrow.JobStatus.Refunded));
+    }
+
+    function test_RefundUnresolved_RevertsOnFundedJob() public {
+        uint256 jobId = _createJob();
+        vm.warp(block.timestamp + RESOLVE_TIMEOUT + 1);
+        vm.expectRevert(abi.encodeWithSelector(AgentEscrow.WrongStatus.selector, AgentEscrow.JobStatus.Funded));
+        escrow.refundUnresolved(jobId);
+    }
+
+    function test_ConstructorRejectsTimeoutInsideDisputeWindow() public {
+        vm.expectRevert(AgentEscrow.InvalidTimeout.selector);
+        new AgentEscrow(IERC20(address(usdc)), IComplianceGate(address(gate)), 1 hours, 1 hours, arbiter);
+    }
+
+    // ── input hardening ─────────────────────────────────────────────────
+
+    function test_DeliverRejectsEmptyHash() public {
+        uint256 jobId = _createJob();
+        vm.prank(seller);
+        vm.expectRevert(AgentEscrow.InvalidParams.selector);
+        escrow.deliver(jobId, bytes32(0));
+    }
+
+    function test_CreateJobRejectsSelfDealing() public {
+        vm.prank(buyer);
+        vm.expectRevert(AgentEscrow.SelfDealing.selector);
+        escrow.createJob(buyer, AMOUNT, uint64(block.timestamp + 1 days), keccak256("spec"));
+    }
+
+    // ── deferred payout when the token refuses the transfer ─────────────
+
+    function test_BlacklistedRecipientIsCreditedNotStranded() public {
+        BlacklistUSDC token = new BlacklistUSDC();
+        ComplianceGate g = new ComplianceGate(ADMIN_DELAY, arbiter, arbiter);
+        AgentEscrow esc = new AgentEscrow(
+            IERC20(address(token)), IComplianceGate(address(g)), DISPUTE_WINDOW, RESOLVE_TIMEOUT, arbiter
+        );
+        vm.prank(arbiter);
+        g.setAllowed(seller, true, keccak256("clean"));
+
+        token.mint(buyer, AMOUNT);
+        vm.prank(buyer);
+        token.approve(address(esc), type(uint256).max);
+        vm.prank(buyer);
+        uint256 jobId = esc.createJob(seller, AMOUNT, uint64(block.timestamp + 1 days), keccak256("spec"));
+        vm.prank(seller);
+        esc.deliver(jobId, keccak256("report"));
+
+        // Issuer blacklists the seller after delivery. Release must still settle
+        // the job rather than revert forever.
+        token.setBlocked(seller, true);
+        vm.prank(buyer);
+        vm.expectEmit(true, true, false, true);
+        emit AgentEscrow.PayoutDeferred(jobId, seller, AMOUNT);
+        esc.release(jobId);
+
+        assertEq(uint8(esc.getJob(jobId).status), uint8(AgentEscrow.JobStatus.Released));
+        assertEq(esc.owed(seller), AMOUNT);
+        assertEq(token.balanceOf(seller), 0);
+
+        // Once the seller can receive again, the credit is claimable.
+        token.setBlocked(seller, false);
+        vm.prank(seller);
+        esc.withdraw();
+        assertEq(token.balanceOf(seller), AMOUNT);
+        assertEq(esc.owed(seller), 0);
+
+        vm.prank(seller);
+        vm.expectRevert(AgentEscrow.NothingOwed.selector);
+        esc.withdraw();
+    }
+}
+
+/// @dev USDC-style token that can refuse transfers to a blacklisted address.
+contract BlacklistUSDC is ERC20 {
+    mapping(address => bool) public blocked;
+
+    constructor() ERC20("Blacklisting USDC", "bUSDC") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function setBlocked(address who, bool v) external {
+        blocked[who] = v;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        require(!blocked[to] && !blocked[from], "blacklisted");
+        super._update(from, to, value);
     }
 }

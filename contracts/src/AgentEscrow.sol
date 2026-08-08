@@ -44,9 +44,18 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     ///         permanently brick releases (the escrow itself is immutable).
     IComplianceGate public gate;
     uint64 public immutable disputeWindow; // seconds after delivery during which buyer may dispute
+    /// @notice Seconds after delivery beyond which a still-unsettled job can be
+    ///         refunded to the buyer by anyone. The backstop for an arbiter that
+    ///         never resolves a dispute, a seller whose screening verdict went
+    ///         stale, or a gate that reverts — without it those funds are locked
+    ///         with no exit at all.
+    uint64 public immutable resolveTimeout;
 
     uint256 public nextJobId = 1;
     mapping(uint256 => Job) public jobs;
+    /// @notice Payouts that could not be pushed (e.g. the token blacklisted the
+    ///         recipient), claimable later via {withdraw}.
+    mapping(address => uint256) public owed;
 
     error InvalidParams();
     error NotBuyer();
@@ -59,6 +68,11 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     error ComplianceBlocked(address seller);
     error SellerNotBlocked(address seller);
     error ZeroAddress();
+    error ResolveTimeoutNotPassed();
+    error InvalidTimeout();
+    error NothingOwed();
+    error SelfDealing();
+    error NotAContract();
 
     event JobCreated(
         uint256 indexed jobId,
@@ -74,13 +88,26 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     event JobResolved(uint256 indexed jobId, bool releasedToSeller);
     event JobRefunded(uint256 indexed jobId, address indexed buyer, uint256 amount);
     event JobRefundedCompliance(uint256 indexed jobId, address indexed seller);
+    event JobRefundedTimeout(uint256 indexed jobId);
+    event PayoutDeferred(uint256 indexed jobId, address indexed to, uint256 amount);
+    event Withdrawn(address indexed to, uint256 amount);
     event GateChanged(address indexed oldGate, address indexed newGate);
 
-    constructor(IERC20 usdc_, IComplianceGate gate_, uint64 disputeWindow_, address arbiter) Ownable(arbiter) {
+    constructor(IERC20 usdc_, IComplianceGate gate_, uint64 disputeWindow_, uint64 resolveTimeout_, address arbiter)
+        Ownable(arbiter)
+    {
         if (address(usdc_) == address(0) || address(gate_) == address(0)) revert ZeroAddress();
+        // _send uses a low-level call, which succeeds against an address with no
+        // code — a payout would then "succeed" having moved nothing. SafeERC20
+        // makes this check per call; doing it once here covers every payout.
+        if (address(usdc_).code.length == 0) revert NotAContract();
+        // The timeout is a backstop for the dispute process, so it has to
+        // outlast the window in which that process can still be started.
+        if (resolveTimeout_ <= disputeWindow_) revert InvalidTimeout();
         usdc = usdc_;
         gate = gate_;
         disputeWindow = disputeWindow_;
+        resolveTimeout = resolveTimeout_;
     }
 
     /// @notice Swap the compliance gate (owner only). Escape hatch for a buggy
@@ -109,6 +136,7 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         returns (uint256 jobId)
     {
         if (seller == address(0) || amount == 0 || deadline <= block.timestamp) revert InvalidParams();
+        if (seller == msg.sender) revert SelfDealing();
         jobId = nextJobId++;
         jobs[jobId] = Job({
             buyer: msg.sender,
@@ -129,6 +157,7 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         Job storage job = jobs[jobId];
         if (job.status != JobStatus.Funded) revert WrongStatus(job.status);
         if (msg.sender != job.seller) revert NotSeller();
+        if (deliverableHash == bytes32(0)) revert InvalidParams();
         if (block.timestamp > job.deadline) revert DeadlinePassed();
         job.status = JobStatus.Delivered;
         job.deliveredAt = uint64(block.timestamp);
@@ -175,19 +204,53 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     }
 
     /// @notice Escape hatch: refund the buyer of a Delivered/Disputed job whose
-    ///         seller fails compliance screening. Callable by anyone — without
-    ///         this, funds for a later-blocked seller would be locked forever
-    ///         (release reverts on ComplianceBlocked and the dispute window may
-    ///         already be closed). Compliance is absolute: a blocked seller can
-    ///         never be paid, only the buyer refunded.
+    ///         seller has been affirmatively blocked by the screener. Callable
+    ///         by anyone — without this, funds for a later-blocked seller would
+    ///         be locked forever (release reverts on ComplianceBlocked and the
+    ///         dispute window may already be closed). Compliance is absolute: a
+    ///         blocked seller can never be paid, only the buyer refunded.
+    /// @dev Gated on `isBlocked`, NOT on `!isAllowed`. Those differ for a seller
+    ///      that has merely not been screened yet, or whose verdict expired —
+    ///      and treating "unknown" as "blocked" made this a free cancel button:
+    ///      anyone could claw back a delivered job during the gap between
+    ///      delivery and the screener's first verdict, or for as long as the
+    ///      screening provider was down. Unknown sellers are handled by
+    ///      {refundUnresolved} instead, which costs the buyer a real wait.
     function refundBlocked(uint256 jobId) external nonReentrant {
         Job storage job = jobs[jobId];
         if (job.status != JobStatus.Delivered && job.status != JobStatus.Disputed) {
             revert WrongStatus(job.status);
         }
-        if (gate.isAllowed(job.seller)) revert SellerNotBlocked(job.seller);
+        if (!gate.isBlocked(job.seller)) revert SellerNotBlocked(job.seller);
         emit JobRefundedCompliance(jobId, job.seller);
         _payout(jobId, job, false);
+    }
+
+    /// @notice Last-resort timeout: refund the buyer of a job that has sat
+    ///         Delivered or Disputed for longer than `resolveTimeout`.
+    ///         Permissionless.
+    /// @dev Covers every way settlement can otherwise stall forever: an arbiter
+    ///      that never calls {resolveDispute}, a seller whose verdict went stale
+    ///      so neither {release} nor {refundBlocked} applies, and a compliance
+    ///      gate that reverts. The wait is what stops it being a griefing tool —
+    ///      an honest job releases long before the timeout elapses.
+    function refundUnresolved(uint256 jobId) external nonReentrant {
+        Job storage job = jobs[jobId];
+        if (job.status != JobStatus.Delivered && job.status != JobStatus.Disputed) {
+            revert WrongStatus(job.status);
+        }
+        if (block.timestamp <= uint256(job.deliveredAt) + resolveTimeout) revert ResolveTimeoutNotPassed();
+        emit JobRefundedTimeout(jobId);
+        _payout(jobId, job, false);
+    }
+
+    /// @notice Claim a payout that could not be pushed at settlement time.
+    function withdraw() external nonReentrant {
+        uint256 amount = owed[msg.sender];
+        if (amount == 0) revert NothingOwed();
+        owed[msg.sender] = 0;
+        usdc.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
     function getJob(uint256 jobId) external view returns (Job memory) {
@@ -198,12 +261,26 @@ contract AgentEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         if (toSeller) {
             if (!gate.isAllowed(job.seller)) revert ComplianceBlocked(job.seller);
             job.status = JobStatus.Released;
-            usdc.safeTransfer(job.seller, job.amount);
+            _send(jobId, job.seller, job.amount);
             emit JobReleased(jobId, job.seller, job.amount);
         } else {
             job.status = JobStatus.Refunded;
-            usdc.safeTransfer(job.buyer, job.amount);
+            _send(jobId, job.buyer, job.amount);
             emit JobRefunded(jobId, job.buyer, job.amount);
         }
+    }
+
+    /// @dev Push the payout, but never let a failed transfer strand the job.
+    ///      USDC can blacklist an address at the issuer's discretion; with a
+    ///      plain safeTransfer that reverts, and since release, refund and both
+    ///      escape hatches all transfer, such a job would have no exit at all.
+    ///      On failure the amount is credited for the recipient to {withdraw}
+    ///      once they can receive again — the job still settles either way.
+    function _send(uint256 jobId, address to, uint256 amount) private {
+        (bool success, bytes memory data) = address(usdc).call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        // Mirror SafeERC20's tolerance of non-standard tokens that return nothing.
+        if (success && (data.length == 0 || abi.decode(data, (bool)))) return;
+        owed[to] += amount;
+        emit PayoutDeferred(jobId, to, amount);
     }
 }
