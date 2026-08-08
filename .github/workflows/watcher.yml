@@ -1,0 +1,65 @@
+name: watcher
+
+# Hosts the watcher without a server: each scheduled run drives the normal loop
+# for ~4.5 minutes and exits cleanly, so the 5-minute cron gives near-continuous
+# coverage. Well inside the 3600s dispute window, and free on a public repo.
+#
+# The watcher key holds SCREENER_ROLE. Set it as a repository secret — either
+# WATCHER_PRIVATE_KEY (EOA) or the Circle set below; walletFromEnv picks the path
+# from WALLET_PROVIDER.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Never run two watchers at once: both would try to release the same job.
+concurrency:
+  group: watcher
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+
+      # The store holds the block cursor and any pending release. Losing it is
+      # survivable (the watcher re-scans a bounded window) but wasteful, so it is
+      # carried between runs on a best-effort basis.
+      - name: Restore watcher state
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/watcher/data
+          key: watcher-state-${{ github.run_id }}
+          restore-keys: watcher-state-
+
+      - name: Run watcher
+        env:
+          AGENTMESH_NETWORK: ${{ vars.AGENTMESH_NETWORK || 'arc-testnet' }}
+          WATCHER_RUN_FOR_MS: "270000"
+          POLL_MS: "4000"
+          WALLET_PROVIDER: ${{ vars.WALLET_PROVIDER || 'eoa' }}
+          WATCHER_PRIVATE_KEY: ${{ secrets.WATCHER_PRIVATE_KEY }}
+          CIRCLE_API_KEY: ${{ secrets.CIRCLE_API_KEY }}
+          CIRCLE_ENTITY_SECRET: ${{ secrets.CIRCLE_ENTITY_SECRET }}
+          CIRCLE_WATCHER_WALLET_ID: ${{ secrets.CIRCLE_WATCHER_WALLET_ID }}
+          CIRCLE_WATCHER_WALLET_ADDRESS: ${{ secrets.CIRCLE_WATCHER_WALLET_ADDRESS }}
+          CIRCLE_COMPLIANCE_API_KEY: ${{ secrets.CIRCLE_COMPLIANCE_API_KEY }}
+        run: pnpm --filter @agentmesh/watcher start
+
+      - name: Save watcher state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/watcher/data
+          key: watcher-state-${{ github.run_id }}

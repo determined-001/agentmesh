@@ -235,3 +235,13 @@ function shutdown(signal: string) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Bounded-run mode, for hosts that give you a scheduler instead of a daemon (a
+// GitHub Actions cron, a cloud cron job). The loop is unchanged — it just stops
+// itself before the runner is killed, so the cursor and any pending release are
+// committed to the store rather than lost mid-tick.
+const RUN_FOR_MS = Number(process.env.WATCHER_RUN_FOR_MS ?? 0);
+if (RUN_FOR_MS > 0) {
+  log.info({ runForMs: RUN_FOR_MS }, "bounded run — will exit when the window elapses");
+  setTimeout(() => shutdown("run window elapsed"), RUN_FOR_MS);
+}
