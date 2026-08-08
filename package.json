@@ -26,8 +26,17 @@
   "engines": {
     "node": ">=20"
   },
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.23",
+      "sharp": ">=0.35.0",
+      "fast-uri": ">=3.1.5",
+      "ip-address": ">=10.3.1",
+      "@hono/node-server": ">=2.0.5"
+    }
+  },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.5",
+    "@biomejs/biome": "2.5.5",
     "@circle-fin/developer-controlled-wallets": "^9.0.0",
     "vitest": "^4.1.10"
   }
