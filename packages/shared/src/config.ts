@@ -8,6 +8,10 @@ export interface Deployment {
   complianceGate: Address;
   agentEscrow: Address;
   disputeWindow: number;
+  /** Seconds after delivery before a stuck job can be refunded by anyone. */
+  resolveTimeout: number;
+  /** Chain the artifact was written for; checked against the configured chain. */
+  chainId?: number;
 }
 
 /** Resolve deployment addresses. Precedence: explicit env vars → deployments JSON
@@ -31,6 +35,8 @@ export function loadDeployment(network: NetworkName, fromJson?: Partial<Deployme
     complianceGate,
     agentEscrow,
     disputeWindow: d.disputeWindow ?? Number(process.env.DISPUTE_WINDOW ?? 300),
+    resolveTimeout: d.resolveTimeout ?? Number(process.env.RESOLVE_TIMEOUT ?? 604_800),
+    chainId: d.chainId,
   };
 }
 
