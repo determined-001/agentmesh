@@ -10,6 +10,22 @@ import {
 } from "viem";
 import type { AgentWallet, WriteContractParams } from "./types.js";
 
+/** The slice of @circle-fin/developer-controlled-wallets this adapter uses.
+ *  Declared structurally rather than imported: the package is an optional
+ *  dependency loaded lazily, so the EOA path never needs it installed. */
+interface CircleSdk {
+  createContractExecutionTransaction(params: {
+    walletId: string;
+    contractAddress: Address;
+    callData: Hex;
+    fee: { type: string; config: { feeLevel: string } };
+  }): Promise<{ data?: { id: string } }>;
+  getTransaction(params: { id: string }): Promise<{
+    data?: { transaction?: { state?: string; txHash?: Hex; errorReason?: string } };
+  }>;
+  signMessage(params: { walletId: string; message: string }): Promise<{ data?: { signature?: Hex } }>;
+}
+
 export interface CircleWalletConfig {
   apiKey: string; // Circle Developer Console API key
   entitySecret: string; // Circle entity secret (ciphertext generated per request by the SDK)
@@ -29,8 +45,7 @@ export class CircleWallet implements AgentWallet {
   readonly kind = "circle" as const;
   readonly publicClient: PublicClient;
   private readonly config: CircleWalletConfig;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private client: any | undefined;
+  private client: CircleSdk | undefined;
 
   constructor(config: CircleWalletConfig, chain: Chain) {
     this.config = config;
@@ -40,13 +55,13 @@ export class CircleWallet implements AgentWallet {
     });
   }
 
-  private async sdk() {
+  private async sdk(): Promise<CircleSdk> {
     if (!this.client) {
       const mod = await import("@circle-fin/developer-controlled-wallets");
       this.client = mod.initiateDeveloperControlledWalletsClient({
         apiKey: this.config.apiKey,
         entitySecret: this.config.entitySecret,
-      });
+      }) as unknown as CircleSdk;
     }
     return this.client;
   }
@@ -68,11 +83,14 @@ export class CircleWallet implements AgentWallet {
       callData,
       fee: { type: "level", config: { feeLevel: "MEDIUM" } },
     });
-    const txId: string = res.data?.id;
+    const txId = res.data?.id;
+    // Previously typed as `string` over an optional field: a Circle response
+    // without an id silently became `undefined` and was polled as one.
+    if (!txId) throw new Error("Circle createContractExecutionTransaction returned no transaction id");
     // Poll Circle until the transaction lands on-chain and a hash is available.
     for (let i = 0; i < 60; i++) {
       const tx = await client.getTransaction({ id: txId });
-      const state: string = tx.data?.transaction?.state;
+      const state = tx.data?.transaction?.state;
       const hash: Hex | undefined = tx.data?.transaction?.txHash;
       if (state === "FAILED" || state === "DENIED") {
         throw new Error(`Circle transaction ${txId} ${state}: ${tx.data?.transaction?.errorReason ?? ""}`);
