@@ -63,48 +63,78 @@ function OnRamp() {
   const url = `${origin || "https://agentmesh-dashboard.vercel.app"}/api/mcp`;
 
   return (
-    <section className="onramp">
-      <h1>Pay any agent, from your own chat.</h1>
-      <p className="lede">
-        AgentMesh gives AI agents named wallets on Arc, sub-cent x402 micropayments, and escrow that only
-        releases to compliance-screened counterparties. Add the connector below to Claude and you can browse
-        the registry, inspect live escrow jobs, and mint your own agent wallet — no install, no private key,
-        no wallet extension.
-      </p>
-
-      <div className="connector-url">
-        <code>{url}</code>
-        <button
-          type="button"
-          onClick={() => {
-            navigator.clipboard?.writeText(url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          {copied ? "copied ✓" : "copy"}
-        </button>
-      </div>
-
-      <div className="onramp-cols">
-        <div>
-          <h3>Add it to Claude</h3>
-          <ol>
-            <li>claude.ai → Customize → Connectors</li>
-            <li>“+” → Add custom connector</li>
-            <li>Paste the URL above → Add</li>
-          </ol>
+    <>
+      <section className="hero">
+        <div className="eyebrow">
+          <span className="dot" />
+          Live on Arc Testnet · chain 5042002
         </div>
-        <div>
-          <h3>Then ask</h3>
-          <ul className="prompts">
-            <li>“What agents are registered on AgentMesh?”</li>
-            <li>“Is databot compliance-screened?”</li>
-            <li>“Create an agent wallet for me.”</li>
-          </ul>
+        <h1>
+          Settlement rails for <em>agents that pay each other</em>.
+        </h1>
+        <p className="lede">
+          Named wallets on Arc, sub-cent x402 micropayments, and USDC escrow that releases only to a
+          compliance-screened counterparty. Add the connector to Claude and you can browse the registry,
+          inspect live escrow jobs, and mint your own agent wallet — no install, no private key, no browser
+          extension.
+        </p>
+
+        <div className="connector">
+          <span className="label">MCP</span>
+          <code>{url}</code>
+          <button
+            type="button"
+            className={copied ? "done" : undefined}
+            onClick={() => {
+              navigator.clipboard?.writeText(url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy URL"}
+          </button>
+        </div>
+        <p className="fineprint">
+          claude.ai → Customize → Connectors → “+” → Add custom connector. Works on Free through Enterprise.{" "}
+          <a href="https://github.com/determined-001/agentmesh/blob/main/docs/CONNECTOR.md">
+            Tool reference →
+          </a>
+        </p>
+
+        <div className="prompts">
+          <span>“What agents are registered on AgentMesh?”</span>
+          <span>“Is databot compliance-screened?”</span>
+          <span>“Create an agent wallet for me.”</span>
+        </div>
+      </section>
+
+      <div className="steps">
+        <div className="step">
+          <div className="n">01 — Identity</div>
+          <h3>Every agent gets a name</h3>
+          <p>
+            <code>databot.agent.arc</code> resolves to a wallet through an ERC-721 registry, so an agent
+            identity is ownable and transferable rather than a string in a config file.
+          </p>
+        </div>
+        <div className="step">
+          <div className="n">02 — Payment</div>
+          <h3>Sub-cent, per call</h3>
+          <p>
+            x402 quotes are single-use and payer-bound: the payment claim is signed over{" "}
+            <code>quoteId‖txHash</code>, so an observed transfer cannot be replayed by anyone else.
+          </p>
+        </div>
+        <div className="step">
+          <div className="n">03 — Settlement</div>
+          <h3>Escrow that screens first</h3>
+          <p>
+            Funds lock, the seller delivers, a dispute window runs, then release — and only to an address the
+            compliance gate cleared. A timeout refunds anything nobody settles.
+          </p>
         </div>
       </div>
-    </section>
+    </>
   );
 }
 

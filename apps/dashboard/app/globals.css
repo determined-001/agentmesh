@@ -250,80 +250,169 @@ a:hover {
 }
 
 /* ---- connector on-ramp ---- */
-.onramp {
+.hero {
+  position: relative;
   border: 1px solid var(--border);
-  background: var(--surface-raised);
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 24px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(57, 135, 229, 0.1) 0%, transparent 55%), var(--surface-raised);
+  border-radius: 14px;
+  padding: 30px 28px 26px;
+  margin-bottom: 28px;
+  overflow: hidden;
 }
-.onramp h1 {
-  font-size: 20px;
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(57, 135, 229, 0.55), transparent);
 }
-.onramp .lede {
+.hero .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.hero .eyebrow .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-good);
+  box-shadow: 0 0 0 3px rgba(12, 163, 12, 0.16);
+}
+.hero h1 {
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 660;
+  letter-spacing: -0.03em;
+  margin-bottom: 10px;
+  max-width: 20ch;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+.hero .lede {
   color: var(--text-secondary);
-  max-width: 68ch;
-  margin-bottom: 16px;
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 62ch;
 }
-.connector-url {
+
+.connector {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
   background: var(--surface-inset);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 16px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 22px 0 10px;
 }
-.connector-url code {
+.connector .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.connector code {
+  flex: 1 1 320px;
   font-family: var(--mono);
   font-size: 13px;
-  color: var(--accent);
+  color: var(--text-primary);
   word-break: break-all;
 }
-.connector-url button {
+.connector button {
   font: inherit;
   font-size: 12px;
-  color: var(--text-primary);
-  background: var(--accent-soft);
+  font-weight: 550;
+  color: #fff;
+  background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 6px;
-  padding: 4px 10px;
+  border-radius: 7px;
+  padding: 6px 14px;
   cursor: pointer;
+  transition: filter 120ms ease;
 }
-.onramp-cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
+.connector button:hover {
+  filter: brightness(1.1);
 }
-.onramp ol {
-  padding-left: 18px;
+.connector button.done {
+  background: transparent;
+  color: var(--status-good);
+  border-color: rgba(12, 163, 12, 0.5);
+}
+.hero .fineprint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hero .fineprint a {
   color: var(--text-secondary);
 }
-.onramp li {
-  margin-bottom: 4px;
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 28px;
 }
-.onramp .prompts {
-  list-style: none;
-  padding: 0;
+.step {
+  background: var(--surface-raised);
+  padding: 16px 18px;
 }
-.onramp .prompts li {
+.step .n {
   font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.step h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+.step p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.step code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.prompts span {
   font-size: 12px;
   color: var(--text-secondary);
   background: var(--surface-inset);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
+  border-radius: 999px;
+  padding: 5px 12px;
 }
-.onramp h3 {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+
+@media (max-width: 560px) {
+  .hero {
+    padding: 22px 18px;
+  }
+  .hero h1 {
+    font-size: 24px;
+  }
 }
