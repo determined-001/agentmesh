@@ -123,7 +123,7 @@ Note Arc's decimals gotcha: USDC is **18 decimals as native gas**, **6 decimals 
 - x402 payments are **payer-bound**: server-issued single-use quotes + a payer signature over `quoteId‖txHash`; observed transfers can't be claimed by third parties, replays are rejected, and the replay set survives restarts (SQLite).
 - Fallback screening (no Compliance Engine key) is **clearly labeled** in watcher logs — no pretend compliance. Compliance-API outages **fail closed** (default-deny), never open.
 - Blocked sellers can never be paid — not even by the arbiter. `refundBlocked()` lets anyone return funds to the buyer, so compliance blocks can't strand money.
-- The extension holds **no keys**; actions proxy through the dashboard's `/api/action`, which requires a bearer token (`DASHBOARD_ACTION_TOKEN`) off-local.
+- The extension holds **no keys**; actions proxy through the dashboard's `/api/action`, which requires a bearer token (`DASHBOARD_ACTION_TOKEN`). The route fails closed — with no token configured it rejects everything, unless you explicitly set `DASHBOARD_ALLOW_UNAUTHENTICATED=1` on `AGENTMESH_NETWORK=local`.
 - `AgentEscrow`: OpenZeppelin `SafeERC20` + `ReentrancyGuard` + `Ownable2Step` + `Pausable` (pause blocks new jobs only — funds-out paths are never pausable). Invariant-tested: escrow balance always equals the sum of open jobs; no double payout.
 - Services are restart-safe (kill -9 drill in CI-adjacent testing): watcher resumes pending releases from durable state; seller keeps payment history and replay protection.
 - Demo keys are anvil's well-known development accounts; never use them beyond local testing.
