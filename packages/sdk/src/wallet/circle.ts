@@ -31,6 +31,21 @@ export interface CircleWalletConfig {
   entitySecret: string; // Circle entity secret (ciphertext generated per request by the SDK)
   walletId: string; // Developer-Controlled Wallet id (SCA on ARC-TESTNET)
   address: Address; // the wallet's on-chain address
+  /** How many 2s polls to wait for Circle to land the transaction. Default 60
+   *  (two minutes) suits a long-running service; a serverless caller has a hard
+   *  invocation ceiling and should pass a smaller number, then report the
+   *  Circle transaction id so the caller can poll separately. */
+  pollAttempts?: number;
+}
+
+/** Thrown when Circle accepted the transaction but it had not landed before the
+ *  poll budget ran out. Carries the Circle transaction id so the caller can keep
+ *  checking instead of assuming failure — the transaction is still in flight. */
+export class CirclePendingError extends Error {
+  constructor(readonly circleTxId: string) {
+    super(`Circle transaction ${circleTxId} is still pending`);
+    this.name = "CirclePendingError";
+  }
 }
 
 /** Circle Developer-Controlled Wallets adapter (MPC-secured SCA accounts on
@@ -88,7 +103,8 @@ export class CircleWallet implements AgentWallet {
     // without an id silently became `undefined` and was polled as one.
     if (!txId) throw new Error("Circle createContractExecutionTransaction returned no transaction id");
     // Poll Circle until the transaction lands on-chain and a hash is available.
-    for (let i = 0; i < 60; i++) {
+    const attempts = this.config.pollAttempts ?? 60;
+    for (let i = 0; i < attempts; i++) {
       const tx = await client.getTransaction({ id: txId });
       const state = tx.data?.transaction?.state;
       const hash: Hex | undefined = tx.data?.transaction?.txHash;
@@ -98,7 +114,7 @@ export class CircleWallet implements AgentWallet {
       if (hash && (state === "CONFIRMED" || state === "COMPLETE" || state === "SENT")) return hash;
       await new Promise((r) => setTimeout(r, 2000));
     }
-    throw new Error(`Circle transaction ${txId} did not confirm in time`);
+    throw new CirclePendingError(txId);
   }
 
   async waitForReceipt(txHash: Hex): Promise<TransactionReceipt> {

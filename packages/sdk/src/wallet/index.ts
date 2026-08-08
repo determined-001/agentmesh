@@ -3,7 +3,7 @@ import { CircleWallet } from "./circle.js";
 import type { AgentWallet } from "./types.js";
 import { ViemEoaWallet } from "./viemEoa.js";
 
-export { CircleWallet, type CircleWalletConfig } from "./circle.js";
+export { CirclePendingError, CircleWallet, type CircleWalletConfig } from "./circle.js";
 export * from "./types.js";
 export { ViemEoaWallet } from "./viemEoa.js";
 
