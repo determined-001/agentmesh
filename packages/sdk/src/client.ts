@@ -99,6 +99,27 @@ export class AgentMeshClient {
     })) as AgentCard[];
   }
 
+  private registeredWallets?: { at: number; set: Set<string> };
+
+  /** Is `wallet` the settlement address of some registered agent?
+   *  Backs the `registeredAgent` payee policy, so it walks the whole registry
+   *  rather than just the first page — a payee sitting on page two must not
+   *  read as unregistered. Cached briefly: this runs once per micropayment. */
+  async isRegisteredWallet(wallet: Address, maxAgeMs = 60_000): Promise<boolean> {
+    const now = Date.now();
+    if (!this.registeredWallets || now - this.registeredWallets.at > maxAgeMs) {
+      const set = new Set<string>();
+      const page = 100n;
+      for (let offset = 0n; ; offset += page) {
+        const cards = await this.listAgents(offset, page);
+        for (const c of cards) set.add(c.wallet.toLowerCase());
+        if (cards.length < Number(page)) break;
+      }
+      this.registeredWallets = { at: now, set };
+    }
+    return this.registeredWallets.set.has(wallet.toLowerCase());
+  }
+
   // ---------- USDC ----------
 
   async usdcBalance(account?: Address): Promise<bigint> {
@@ -226,6 +247,43 @@ export class AgentMeshClient {
     return tx;
   }
 
+  /** Timeout backstop: refunds the buyer of a job that has been stuck in
+   *  Delivered or Disputed past `resolveTimeout`. Callable by anyone. Covers an
+   *  unresponsive arbiter, a stale screening verdict, and a reverting gate. */
+  async refundUnresolved(jobId: bigint): Promise<Hex> {
+    const tx = await this.wallet.writeContract({
+      address: this.deployment.agentEscrow,
+      abi: agentEscrowAbi,
+      functionName: "refundUnresolved",
+      args: [jobId],
+    });
+    await this.wallet.waitForReceipt(tx);
+    return tx;
+  }
+
+  /** Claim a payout that could not be pushed at settlement time (e.g. the token
+   *  blacklisted the recipient when the job settled). */
+  async withdrawOwed(): Promise<Hex> {
+    const tx = await this.wallet.writeContract({
+      address: this.deployment.agentEscrow,
+      abi: agentEscrowAbi,
+      functionName: "withdraw",
+      args: [],
+    });
+    await this.wallet.waitForReceipt(tx);
+    return tx;
+  }
+
+  async owedTo(account?: Address): Promise<bigint> {
+    const addr = account ?? (await this.wallet.getAddress());
+    return (await this.publicClient.readContract({
+      address: this.deployment.agentEscrow,
+      abi: agentEscrowAbi,
+      functionName: "owed",
+      args: [addr],
+    })) as bigint;
+  }
+
   async getJob(jobId: bigint): Promise<EscrowJob> {
     return (await this.publicClient.readContract({
       address: this.deployment.agentEscrow,
@@ -250,6 +308,17 @@ export class AgentMeshClient {
       address: this.deployment.complianceGate,
       abi: complianceGateAbi,
       functionName: "isAllowed",
+      args: [account],
+    })) as boolean;
+  }
+
+  /** Affirmatively screened and denied — NOT the inverse of {@link isAllowed},
+   *  which is also false for accounts that are merely unscreened or stale. */
+  async isBlocked(account: Address): Promise<boolean> {
+    return (await this.publicClient.readContract({
+      address: this.deployment.complianceGate,
+      abi: complianceGateAbi,
+      functionName: "isBlocked",
       args: [account],
     })) as boolean;
   }

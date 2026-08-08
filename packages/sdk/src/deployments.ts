@@ -31,7 +31,16 @@ export function readDeployment(network: NetworkName): Deployment {
   const file = findDeploymentFile(network);
   const fromJson = file ? (JSON.parse(readFileSync(file, "utf8")) as Partial<Deployment>) : undefined;
   // Env vars (USDC_ADDRESS etc.) still override the JSON inside loadDeployment.
-  return loadDeployment(network, fromJson);
+  const deployment = loadDeployment(network, fromJson);
+  // A stale or mismatched artifact silently pointed the stack at addresses from
+  // another chain; the artifact records the chain it was written for, so say so.
+  const expected = chainFor(network).id;
+  if (deployment.chainId !== undefined && deployment.chainId !== expected) {
+    throw new Error(
+      `Deployment artifact${file ? ` ${file}` : ""} is for chainId ${deployment.chainId}, but ${network} is chainId ${expected}`,
+    );
+  }
+  return deployment;
 }
 
 /** One-call bootstrap for services and scripts: network from AGENTMESH_NETWORK
