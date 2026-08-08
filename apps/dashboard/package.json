@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build",
+    "build": "pnpm --filter \"@agentmesh/dashboard^...\" build && next build",
     "start": "next start -p 3000",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@agentmesh/sdk": "workspace:*",
     "@agentmesh/shared": "workspace:*",
-    "next": "^15.3.0",
+    "next": "^15.5.23",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.21.0"
