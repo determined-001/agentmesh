@@ -56,12 +56,15 @@ if (cmd === "entity-secret") {
   });
   appendEnv([`CIRCLE_ENTITY_SECRET=${entitySecret}`]);
   console.log(`Entity secret registered and appended to .env as CIRCLE_ENTITY_SECRET.`);
-  console.log(`Recovery file saved under ${recoveryDir}/ — move it to secure offline storage now, it's gitignored but don't leave it in the repo.`);
+  console.log(
+    `Recovery file saved under ${recoveryDir}/ — move it to secure offline storage now, it's gitignored but don't leave it in the repo.`,
+  );
 } else if (cmd === "register") {
   const apiKey = env.CIRCLE_API_KEY;
   const entitySecret = env.CIRCLE_ENTITY_SECRET;
   if (!apiKey) throw new Error("Set CIRCLE_API_KEY in .env first.");
-  if (!entitySecret) throw new Error("Set CIRCLE_ENTITY_SECRET in .env first (or use `entity-secret` to generate one).");
+  if (!entitySecret)
+    throw new Error("Set CIRCLE_ENTITY_SECRET in .env first (or use `entity-secret` to generate one).");
 
   const { registerEntitySecretCiphertext } = await import("@circle-fin/developer-controlled-wallets");
   const recoveryDir = join(root, "recovery");
@@ -71,16 +74,24 @@ if (cmd === "entity-secret") {
     entitySecret,
     recoveryFileDownloadPath: recoveryDir,
   });
-  console.log("Existing CIRCLE_ENTITY_SECRET registered with Circle. .env unchanged (secret was already there).");
-  console.log(`Recovery file saved under ${recoveryDir}/ — move it to secure offline storage now, it's gitignored but don't leave it in the repo.`);
+  console.log(
+    "Existing CIRCLE_ENTITY_SECRET registered with Circle. .env unchanged (secret was already there).",
+  );
+  console.log(
+    `Recovery file saved under ${recoveryDir}/ — move it to secure offline storage now, it's gitignored but don't leave it in the repo.`,
+  );
 } else if (cmd === "wallets") {
   const apiKey = env.CIRCLE_API_KEY;
   const entitySecret = env.CIRCLE_ENTITY_SECRET;
   if (!apiKey || !entitySecret) {
-    throw new Error("Set CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET in .env first (run the entity-secret step).");
+    throw new Error(
+      "Set CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET in .env first (run the entity-secret step).",
+    );
   }
 
-  const { initiateDeveloperControlledWalletsClient } = await import("@circle-fin/developer-controlled-wallets");
+  const { initiateDeveloperControlledWalletsClient } = await import(
+    "@circle-fin/developer-controlled-wallets"
+  );
   const client = initiateDeveloperControlledWalletsClient({ apiKey, entitySecret });
 
   const setRes = await client.createWalletSet({ name: "agentmesh-testnet" });

@@ -43,7 +43,9 @@ try {
   let pollMs = 4_000;
   for (;;) {
     if (Date.now() - startedAt > DELIVER_WAIT_MS) {
-      throw new Error(`job #${jobId} not delivered after ${DELIVER_WAIT_MS}ms — is the seller-agent running?`);
+      throw new Error(
+        `job #${jobId} not delivered after ${DELIVER_WAIT_MS}ms — is the seller-agent running?`,
+      );
     }
     const job = await buyerMesh.getJob(jobId);
     const status = JOB_STATUS[job.status];
