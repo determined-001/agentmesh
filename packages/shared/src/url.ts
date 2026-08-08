@@ -8,6 +8,12 @@
 const PRIVATE_V4 =
   /^(?:0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/;
 
+/** Link-local — the cloud instance-metadata range (169.254.169.254 and friends).
+ *  Blocked in every profile, `allowPrivate` included: the local demo has a
+ *  legitimate need for loopback, never for the metadata service, and the local
+ *  profile does sometimes get run on a cloud VM. */
+const LINK_LOCAL = /^(?:169\.254\.|fe80:)/i;
+
 const BLOCKED_NAMES = /(?:^|\.)(?:localhost|local|internal|home\.arpa)$/i;
 
 export interface EndpointCheck {
@@ -28,9 +34,10 @@ export function checkAgentEndpoint(raw: string, opts: { allowPrivate?: boolean }
   if (url.username || url.password) {
     return { ok: false, reason: "credentials in URL not allowed" };
   }
+  const host = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+  if (LINK_LOCAL.test(host)) return { ok: false, reason: "link-local address blocked" };
   if (opts.allowPrivate) return { ok: true };
 
-  const host = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
   if (BLOCKED_NAMES.test(host)) return { ok: false, reason: "internal hostname blocked" };
   if (PRIVATE_V4.test(host)) return { ok: false, reason: "private IPv4 address blocked" };
   if (host.includes(":")) {

@@ -54,9 +54,33 @@ describe("checkAgentEndpoint", () => {
     }
   });
 
+  it("rejects legacy IPv4 encodings of loopback and metadata", () => {
+    // The WHATWG URL parser normalises all of these to dotted decimal before
+    // the guard sees them; this locks that in so a future hand-rolled host
+    // parse can't quietly reintroduce the bypass.
+    for (const u of [
+      "http://2130706433/", // decimal
+      "http://0x7f000001/", // hex
+      "http://0177.0.0.1/", // octal octet
+      "http://127.1/", // short form
+      "http://0/", // 0.0.0.0
+      "http://2852039166/", // 169.254.169.254
+    ]) {
+      expect(checkAgentEndpoint(u), u).toMatchObject({ ok: false });
+    }
+  });
+
   it("allowPrivate permits localhost for the local demo network", () => {
     expect(checkAgentEndpoint("http://localhost:4021/x", { allowPrivate: true }).ok).toBe(true);
     expect(checkAgentEndpoint("file:///etc/passwd", { allowPrivate: true }).ok).toBe(false); // scheme still enforced
+  });
+
+  it("blocks link-local even under allowPrivate", () => {
+    // The local profile needs loopback; it never needs the cloud metadata
+    // service, and local services do sometimes run on a cloud VM.
+    for (const u of ["http://169.254.169.254/latest/meta-data", "http://[fe80::1]/x"]) {
+      expect(checkAgentEndpoint(u, { allowPrivate: true }), u).toMatchObject({ ok: false });
+    }
   });
 
   it("assert variant throws with the reason", () => {
