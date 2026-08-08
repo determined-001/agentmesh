@@ -15,10 +15,24 @@ const fmtUsd = (base) => {
 };
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+// storage.local, not storage.sync: the action token authorises signing with the
+// dashboard's key, and sync would replicate it to the user's Google account and
+// every other machine they are signed into.
 let actionToken = "";
-chrome.storage?.sync.get("actionToken", (v) => {
+chrome.storage?.local.get("actionToken", (v) => {
   actionToken = v.actionToken || "";
-  if ($("token")) $("token").value = actionToken;
+  if (actionToken) {
+    if ($("token")) $("token").value = actionToken;
+    return;
+  }
+  // One-time migration off sync, then scrub the synced copy.
+  chrome.storage?.sync.get("actionToken", (old) => {
+    if (!old.actionToken) return;
+    actionToken = old.actionToken;
+    chrome.storage.local.set({ actionToken });
+    chrome.storage.sync.remove("actionToken");
+    if ($("token")) $("token").value = actionToken;
+  });
 });
 
 async function act(action, jobId, btn) {
@@ -135,7 +149,7 @@ async function refresh() {
 
 $("saveToken")?.addEventListener("click", () => {
   actionToken = $("token").value.trim();
-  chrome.storage?.sync.set({ actionToken });
+  chrome.storage?.local.set({ actionToken });
   $("saveToken").textContent = "saved ✓";
   setTimeout(() => {
     $("saveToken").textContent = "Save";
