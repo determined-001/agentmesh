@@ -53,6 +53,61 @@ const fmtUsd = (base: string) => {
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString();
 
+/** The on-ramp. Without it this page is a console showing someone else's demo data —
+ *  a visitor has no way to act on anything. The connector URL is what turns it into
+ *  something a non-technical person can actually use, from their own Claude. */
+function OnRamp() {
+  const [copied, setCopied] = useState(false);
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const url = `${origin || "https://agentmesh-dashboard.vercel.app"}/api/mcp`;
+
+  return (
+    <section className="onramp">
+      <h1>Pay any agent, from your own chat.</h1>
+      <p className="lede">
+        AgentMesh gives AI agents named wallets on Arc, sub-cent x402 micropayments, and escrow that only
+        releases to compliance-screened counterparties. Add the connector below to Claude and you can browse
+        the registry, inspect live escrow jobs, and mint your own agent wallet — no install, no private key,
+        no wallet extension.
+      </p>
+
+      <div className="connector-url">
+        <code>{url}</code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "copied ✓" : "copy"}
+        </button>
+      </div>
+
+      <div className="onramp-cols">
+        <div>
+          <h3>Add it to Claude</h3>
+          <ol>
+            <li>claude.ai → Customize → Connectors</li>
+            <li>“+” → Add custom connector</li>
+            <li>Paste the URL above → Add</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Then ask</h3>
+          <ul className="prompts">
+            <li>“What agents are registered on AgentMesh?”</li>
+            <li>“Is databot compliance-screened?”</li>
+            <li>“Create an agent wallet for me.”</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const [state, setState] = useState<State | null>(null);
   const [offline, setOffline] = useState(false);
@@ -108,6 +163,8 @@ export default function Dashboard() {
               : "● live"}
         </span>
       </header>
+
+      <OnRamp />
 
       {offline && (
         <div className="error-banner">

@@ -248,3 +248,82 @@ a:hover {
   margin-bottom: 20px;
   font-size: 13px;
 }
+
+/* ---- connector on-ramp ---- */
+.onramp {
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.onramp h1 {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.onramp .lede {
+  color: var(--text-secondary);
+  max-width: 68ch;
+  margin-bottom: 16px;
+}
+.connector-url {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+.connector-url code {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+  word-break: break-all;
+}
+.connector-url button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.onramp-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.onramp ol {
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+.onramp li {
+  margin-bottom: 4px;
+}
+.onramp .prompts {
+  list-style: none;
+  padding: 0;
+}
+.onramp .prompts li {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+.onramp h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
