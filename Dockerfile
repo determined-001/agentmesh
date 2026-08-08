@@ -18,8 +18,13 @@ RUN pnpm --filter @agentmesh/shared build && pnpm --filter @agentmesh/sdk build
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app /app
-# SQLite data lives here; mount a volume over it.
-RUN mkdir -p /app/apps/seller-agent/data /app/apps/watcher/data
+# SQLite data lives here; mount a volume over it. Owned by `node` so the
+# service can write it without running as root.
+RUN mkdir -p /app/apps/seller-agent/data /app/apps/watcher/data \
+    && chown -R node:node /app
 ARG SERVICE=seller-agent
 ENV SERVICE=${SERVICE}
+# These are long-running network services parsing untrusted input; root is not
+# a privilege they need.
+USER node
 CMD ["sh", "-c", "pnpm --filter @agentmesh/${SERVICE} start"]
