@@ -17,10 +17,14 @@ const SELLER_URL = process.env.SELLER_URL ?? "http://localhost:4021";
 
 const big = (_: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
-/** Every call fans out to ~10 contract reads, and the page polls every 2s per
+/** Every call fans out to ~30 contract reads, and the page polls every 2s per
  *  open tab — without a shared cache, N viewers multiply straight into N×
  *  RPC load on an endpoint we don't own. */
-const CACHE_MS = Number(process.env.STATE_CACHE_MS ?? 2000);
+const CACHE_MS = Number(process.env.STATE_CACHE_MS ?? 5000);
+/** How long a last-known-good snapshot may still be served after upstream
+ *  starts failing. Public RPCs rate-limit in bursts; without this the page
+ *  flapped between live data and "chain state unavailable" every few seconds. */
+const STALE_MS = Number(process.env.STATE_STALE_MS ?? 120_000);
 let cache: { at: number; body: unknown } | undefined;
 let inflight: Promise<unknown> | undefined;
 
@@ -37,6 +41,15 @@ export async function GET() {
     cache = { at: Date.now(), body };
     return NextResponse.json(body);
   } catch (err) {
+    // A rate-limited refresh is not a reason to blank a working dashboard:
+    // serve the last good snapshot, flagged, until it is genuinely old.
+    if (cache && Date.now() - cache.at < STALE_MS) {
+      return NextResponse.json({
+        ...(cache.body as Record<string, unknown>),
+        stale: true,
+        staleForMs: Date.now() - cache.at,
+      });
+    }
     return NextResponse.json({ error: (err as Error).message, network }, { status: 500 });
   }
 }
@@ -45,9 +58,17 @@ async function buildState() {
   {
     const deployment = readDeployment(network);
     // Explicit timeout/retry: a hanging RPC otherwise pins the route open.
+    // `batch` collapses the ~30 concurrent eth_calls below into a handful of
+    // JSON-RPC batch requests — one request per agent field and per job was
+    // enough to trip the public Arc RPC's rate limiter on every other poll.
     const client = createPublicClient({
       chain: chainFor(network),
-      transport: http(undefined, { retryCount: 2, retryDelay: 300, timeout: 10_000 }),
+      transport: http(undefined, {
+        batch: { wait: 20 },
+        retryCount: 2,
+        retryDelay: 300,
+        timeout: 10_000,
+      }),
     });
 
     const agentsRaw = (await client.readContract({

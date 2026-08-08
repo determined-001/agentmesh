@@ -32,6 +32,9 @@ interface State {
   jobs: Job[];
   payments: { count: number; payments: Payment[] };
   error?: string;
+  /** Last-known-good snapshot served because the RPC refresh failed. */
+  stale?: boolean;
+  staleForMs?: number;
 }
 
 const JOB_STATUS = ["None", "Funded", "Delivered", "Disputed", "Released", "Refunded"] as const;
@@ -97,7 +100,13 @@ export default function Dashboard() {
           Agent<span>Mesh</span>
         </div>
         <span className="badge">{state?.network ?? "…"}</span>
-        <span className={`badge ${offline ? "" : "live"}`}>{offline ? "waiting for chain…" : "● live"}</span>
+        <span className={`badge ${offline || state?.stale ? "" : "live"}`}>
+          {offline
+            ? "waiting for chain…"
+            : state?.stale
+              ? `● cached ${Math.round((state.staleForMs ?? 0) / 1000)}s ago`
+              : "● live"}
+        </span>
       </header>
 
       {offline && (
