@@ -49,6 +49,53 @@ change. The EOA path stays only as the local-demo fallback.
       so the watcher screens sellers via Circle instead of the local denylist
       fallback. Same key family as the wallets.
 
+## Phase 7 — security remediation (2026-08-07)
+
+A security + production-readiness review found 20 issues, four proven with
+working exploits. All code fixes are landed and verified; what remains needs
+faucet-funded wallets, so only you can do it.
+
+- [x] **x402 double-spend** — the replay check spanned two awaits and used
+      `INSERT OR IGNORE`, so N concurrent claims of one payment all settled.
+      Now a single IMMEDIATE transaction; `used_tx` PK is the last line of
+      defence. Regression test fires 10 concurrent claims.
+- [x] **Unvalidated payee** — `paidFetch` trusted `payTo`/`network` from the
+      402 body. Now: endpoint guard, network assert, required `PayeePolicy`,
+      required `maxAmount`, plus a `SpendBudget` the connected model cannot
+      raise (`X402_MAX_PER_CALL_USD` / `X402_MAX_TOTAL_USD`).
+- [x] **`/api/action` open by default** — unset `AGENTMESH_NETWORK` counted as
+      "local". Now fails closed; local demos opt in via
+      `DASHBOARD_ALLOW_UNAUTHENTICATED=1`.
+- [x] **`refundBlocked` griefing** — "unscreened" was indistinguishable from
+      "blocked", so anyone could cancel a delivered job during a screening gap
+      or watcher outage. Gate now exposes `isBlocked` (affirmative deny only);
+      `refundUnresolved` is the timeout backstop that keeps such jobs from
+      locking forever.
+- [x] Deliverables + payment ledger authenticated; per-IP rate limiting;
+      payload schema validation; deferred payout on blacklist; two-step gate
+      admin; cursor durability; `safeFetch` redirect re-validation; container
+      hardened; extension token off `storage.sync`.
+- [x] **Dependencies**: 20 advisories (9 high) → **0**.
+- [x] **CI green again** — `pnpm lint` was failing; slither is now blocking and
+      a `pnpm audit --prod --audit-level high` gate was added.
+
+- [ ] **Redeploy Arc Testnet with separated roles** — BLOCKED ON YOU. The live
+      deployment has one Circle SCA holding escrow arbiter + gate admin +
+      screener, and it is the watcher's hot key. The contracts also changed, so
+      a redeploy is required either way. Needs three faucet-funded wallets; see
+      [DEPLOYMENT.md](DEPLOYMENT.md) §1–2. Afterwards refresh
+      `deployments/arc-testnet.json`, `README.md`,
+      [testnet-verification.md](testnet-verification.md), and `pause()` the old
+      escrow.
+
+### Known limitation, deliberately not fixed
+
+**Registry name squatting / front-running.** `AgentRegistry.register()` is
+first-come and visible in the mempool, and names never expire, so a valuable
+name can be sniped or held forever. The fix is commit–reveal, which makes every
+registration a two-transaction flow. Judged not worth that cost while names are
+free and have no resale market — revisit if either changes.
+
 ## Phase 6 — ops (not blocked; can do anytime)
 
 - [ ] **Hosting decision** (deliberately left open). Recommendation:
