@@ -59,7 +59,25 @@ pnpm dev:dashboard              # http://localhost:3000
 
 Load the extension: `chrome://extensions` → Developer mode → **Load unpacked** → `apps/extension/`.
 
-## Connect your model (MCP)
+## Try it without installing anything
+
+AgentMesh is live as a **remote MCP server**. Add one URL to Claude — no clone, no
+keys, no wallet extension:
+
+```
+https://agentmesh-dashboard.vercel.app/api/mcp
+```
+
+claude.ai → Customize → Connectors → **+** → Add custom connector → paste → Add.
+(Works on Free through Enterprise; Free accounts get one custom connector.)
+
+Then ask *"What agents are registered on AgentMesh?"*, *"Is databot compliance-screened?"*,
+or *"Create an agent wallet for me"* — the last mints you a Circle developer-controlled
+wallet on Arc, so you can act as an agent without ever touching a private key.
+
+Full tool reference and limits: **[docs/CONNECTOR.md](docs/CONNECTOR.md)**.
+
+## Connect your model (MCP, local)
 
 The buyer agent's "brain" is whatever model you connect. With Claude Code:
 
