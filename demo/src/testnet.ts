@@ -48,7 +48,8 @@ for (let i = 0; i < MICRO_CALLS; i++) {
   const { response, paid } = await paidFetch(
     mesh,
     `${SELLER_URL}/api/${i % 2 === 0 ? "headline" : "datapoint"}`,
-    { maxAmount: usd("0.01") },
+    // Pay the address the registry resolved above, not the one the 402 names.
+    { maxAmount: usd("0.01"), payeePolicy: { expect: sellerAddr } },
   );
   if (response.status !== 200 || !paid) throw new Error(`x402 call ${i} failed (HTTP ${response.status})`);
   total += paid.amount;

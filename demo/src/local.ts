@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AgentMeshClient, JOB_STATUS, paidFetch, ViemEoaWallet } from "@agentmesh/sdk";
+import { AgentMeshClient, fetchDeliverable, JOB_STATUS, paidFetch, ViemEoaWallet } from "@agentmesh/sdk";
 import { type Deployment, formatUsd, localAnvil, usd } from "@agentmesh/shared";
 import type { Hex } from "viem";
 
@@ -160,7 +160,12 @@ let microTotal = 0n;
 let microCount = 0;
 for (let i = 0; i < 50; i++) {
   const url = `http://localhost:${SELLER_PORT}/api/${i % 2 === 0 ? "headline" : "datapoint"}`;
-  const { response, paid } = await paidFetch(buyerMesh, url, { maxAmount: usd("0.01") });
+  // The payee is whatever the registry says databot settles to — never what
+  // the 402 response asks for.
+  const { response, paid } = await paidFetch(buyerMesh, url, {
+    maxAmount: usd("0.01"),
+    payeePolicy: { expect: sellerAddr },
+  });
   if (response.status !== 200 || !paid) throw new Error(`x402 call ${i} failed: HTTP ${response.status}`);
   microTotal += paid.amount;
   microCount++;
@@ -196,9 +201,14 @@ const sellerAfterEscrow = await buyerMesh.usdcBalance(sellerAddr);
 if (sellerAfterEscrow - sellerAfterMicro !== usd("5")) throw new Error("escrow payout mismatch");
 console.log(`✓ watcher auto-released $5 to databot after dispute window`);
 
-// deliverable is fetchable from the seller
-const deliverable = await (await fetch(`http://localhost:${SELLER_PORT}/jobs/${jobId}/deliverable`)).json();
-console.log(`✓ deliverable retrieved: ${(deliverable as { report: string }).report.slice(0, 80)}…`);
+// deliverable is fetchable by the buyer, who signs to prove it owns the job
+const deliverable = await fetchDeliverable(buyerMesh, `http://localhost:${SELLER_PORT}`, jobId);
+console.log(`✓ deliverable retrieved: ${deliverable.report.slice(0, 80)}…`);
+
+// ...and by nobody else: an unauthenticated read is refused.
+const anon = await fetch(`http://localhost:${SELLER_PORT}/jobs/${jobId}/deliverable`);
+if (anon.status !== 401) throw new Error(`deliverable served without auth (HTTP ${anon.status})`);
+console.log(`✓ unauthenticated deliverable read refused (HTTP ${anon.status})`);
 
 // ---------- 6. dispute branch ----------
 banner("6/7 dispute branch: buyer disputes → arbiter refunds");
