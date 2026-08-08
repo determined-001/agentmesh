@@ -35,7 +35,9 @@ services:
       AGENTMESH_DEPLOYMENT_JSON: /app/deployments/arc-testnet.json
     env_file: .env
     ports:
-      - "4031:4031"
+      # Loopback only: the watcher exposes nothing but health, and nothing
+      # off-host needs to reach it.
+      - "127.0.0.1:4031:4031"
     volumes:
       - watcher-data:/app/apps/watcher/data
       - ./deployments:/app/deployments:ro
