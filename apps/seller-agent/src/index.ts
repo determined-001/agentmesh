@@ -1,12 +1,24 @@
+import { timingSafeEqual } from "node:crypto";
 import { JOB_STATUS, meshFromEnv } from "@agentmesh/sdk";
-import { formatUsd, usd } from "@agentmesh/shared";
+import {
+  DELIVERABLE_AUTH_HEADER,
+  DELIVERABLE_AUTH_MAX_TTL_MS,
+  type DeliverableAuth,
+  decodeDeliverableAuth,
+  deliverableAuthMessage,
+  formatUsd,
+  usd,
+} from "@agentmesh/shared";
 import { createLogger } from "@agentmesh/shared/logger";
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseAbiItem } from "viem";
+import { createRateLimiter } from "./rateLimit.js";
 import { SellerStore } from "./store.js";
 import { priced } from "./x402Middleware.js";
+
+const JOB_ID_RE = /^\d{1,18}$/;
 
 /** DataAgent — the seller side of the AgentMesh demo.
  *  Serves sub-cent x402-priced data endpoints and works escrowed jobs:
@@ -52,7 +64,36 @@ const paymentOpts = {
   state: store,
   recordPayment: (p: Parameters<typeof store.addPayment>[0]) => store.addPayment(p),
 };
-app.use("*", cors());
+// Ahead of everything except health: unauthenticated traffic to a priced route
+// mints a quote row per request, so flooding is a write-amplification attack.
+app.use("/api/*", createRateLimiter());
+app.use("/jobs/*", createRateLimiter());
+app.use("/card", createRateLimiter());
+
+// Priced API routes are meant to be called cross-origin by agents; the operator
+// and deliverable routes are not. A blanket `cors()` reflected `*` onto all of
+// them (and exposed the CORS middleware's ReDoS surface to every path).
+const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use("/api/*", cors({ origin: CORS_ORIGINS.length ? CORS_ORIGINS : "*" }));
+app.use("/card", cors({ origin: CORS_ORIGINS.length ? CORS_ORIGINS : "*" }));
+
+/** Operator-only surfaces (payment ledger, job list). These are ops data, not
+ *  customer data: they expose every payer address, amount and tx hash. */
+const ADMIN_TOKEN = process.env.SELLER_ADMIN_TOKEN ?? "";
+function adminAuthorized(c: Context): boolean {
+  if (!ADMIN_TOKEN) {
+    // Fail closed anywhere but an explicitly-local demo.
+    return process.env.AGENTMESH_NETWORK === "local";
+  }
+  const header = c.req.header("authorization") ?? "";
+  const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const a = Buffer.from(presented);
+  const b = Buffer.from(ADMIN_TOKEN);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 // ---- health ----
 let lastTickAt = 0;
@@ -83,10 +124,63 @@ app.get("/card", (c) =>
     network,
   }),
 );
-app.get("/payments", (c) => c.json({ count: store.paymentCount(), payments: store.recentPayments(500) }));
-app.get("/jobs", (c) => c.json(store.listJobs()));
-app.get("/jobs/:id/deliverable", (c) => {
-  const job = store.getJob(c.req.param("id"));
+app.get("/payments", (c) => {
+  if (!adminAuthorized(c)) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ count: store.paymentCount(), payments: store.recentPayments(500) });
+});
+app.get("/jobs", (c) => {
+  if (!adminAuthorized(c)) return c.json({ error: "unauthorized" }, 401);
+  return c.json(store.listJobs());
+});
+
+/** The buyer's paid artifact. Requires a signature from the address the escrow
+ *  records as this job's buyer — see deliverableAuthMessage. */
+app.get("/jobs/:id/deliverable", async (c) => {
+  const jobId = c.req.param("id");
+  if (!JOB_ID_RE.test(jobId)) return c.json({ error: "jobId must be a decimal string" }, 400);
+
+  const header = c.req.header(DELIVERABLE_AUTH_HEADER);
+  if (!header) return c.json({ error: "authentication required" }, 401);
+
+  let auth: DeliverableAuth;
+  try {
+    auth = decodeDeliverableAuth(header);
+  } catch {
+    return c.json({ error: "malformed authorization header" }, 400);
+  }
+
+  const now = Date.now();
+  if (auth.expiry <= now) return c.json({ error: "authorization expired" }, 401);
+  if (auth.expiry - now > DELIVERABLE_AUTH_MAX_TTL_MS) {
+    return c.json({ error: "authorization dated too far ahead" }, 400);
+  }
+
+  let sigOk = false;
+  try {
+    // Via the public client, so smart-contract wallets verify through ERC-1271.
+    sigOk = await mesh.publicClient.verifyMessage({
+      address: auth.address,
+      message: deliverableAuthMessage(jobId, auth.nonce, auth.expiry),
+      signature: auth.signature,
+    });
+  } catch {
+    sigOk = false;
+  }
+  if (!sigOk) return c.json({ error: "invalid signature" }, 401);
+  if (!store.useNonce(auth.nonce, auth.expiry)) return c.json({ error: "authorization replayed" }, 401);
+
+  // The chain is the authority on who bought this job.
+  let onchainBuyer: string;
+  try {
+    onchainBuyer = (await mesh.getJob(BigInt(jobId))).buyer;
+  } catch {
+    return c.json({ error: "job lookup failed" }, 503);
+  }
+  if (onchainBuyer.toLowerCase() !== auth.address.toLowerCase()) {
+    return c.json({ error: "not the buyer of this job" }, 403);
+  }
+
+  const job = store.getJob(jobId);
   if (!job?.report) return c.json({ error: "not delivered" }, 404);
   return c.json({ jobId: job.jobId, report: job.report, deliveredTx: job.deliveredTx });
 });
@@ -116,38 +210,61 @@ const jobCreatedEvent = parseAbiItem(
 );
 
 let lastBlock = store.getCursor() ?? 0n;
-async function workEscrowJobs() {
-  try {
-    const latest = await mesh.publicClient.getBlockNumber();
-    if (lastBlock === 0n) lastBlock = latest > 50n ? latest - 50n : 0n;
-    if (latest < lastBlock) return;
-    const toBlock = latest - lastBlock > MAX_BLOCK_RANGE ? lastBlock + MAX_BLOCK_RANGE : latest;
-    const logs = await mesh.publicClient.getLogs({
-      address: mesh.deployment.agentEscrow,
-      event: jobCreatedEvent,
-      args: { seller: me },
-      fromBlock: lastBlock,
-      toBlock,
-    });
-    lastBlock = toBlock + 1n;
-    store.setCursor(lastBlock);
 
-    for (const logEntry of logs) {
-      const jobId = logEntry.args.jobId;
-      if (jobId === undefined) continue;
-      const key = jobId.toString();
-      const existing = store.getJob(key);
-      if (existing && existing.status !== "working") continue;
-      const onchain = await mesh.getJob(jobId);
-      if (JOB_STATUS[onchain.status] !== "Funded") continue;
+/** Record every job in the scanned range, THEN advance the cursor.
+ *
+ *  The cursor used to move before the jobs were worked, inside a try/catch that
+ *  swallowed errors — so a crash or a single failed `deliver()` permanently
+ *  skipped those jobs. They were never re-fetched, the buyer's funds sat until
+ *  the deadline, and the seller silently lost paid work. Discovery is now
+ *  durable before the cursor moves; delivery is a separate, retryable pass. */
+async function discoverEscrowJobs() {
+  const latest = await mesh.publicClient.getBlockNumber();
+  if (lastBlock === 0n) lastBlock = latest > 50n ? latest - 50n : 0n;
+  if (latest < lastBlock) return;
+  const toBlock = latest - lastBlock > MAX_BLOCK_RANGE ? lastBlock + MAX_BLOCK_RANGE : latest;
+  const logs = await mesh.publicClient.getLogs({
+    address: mesh.deployment.agentEscrow,
+    event: jobCreatedEvent,
+    args: { seller: me },
+    fromBlock: lastBlock,
+    toBlock,
+  });
+
+  for (const logEntry of logs) {
+    const jobId = logEntry.args.jobId;
+    if (jobId === undefined) continue;
+    const key = jobId.toString();
+    if (store.getJob(key)) continue; // already known — never downgrade its status
+    store.upsertJob({
+      jobId: key,
+      buyer: logEntry.args.buyer ?? "0x",
+      amount: (logEntry.args.amount ?? 0n).toString(),
+      status: "pending",
+    });
+    log.info({ jobId: key, amount: formatUsd(logEntry.args.amount ?? 0n) }, "job discovered");
+  }
+
+  // Only now is it safe to say these blocks are handled.
+  lastBlock = toBlock + 1n;
+  store.setCursor(lastBlock);
+}
+
+/** Work the queue. Each job is isolated: one failure retries next tick instead
+ *  of aborting the batch. */
+async function workPendingJobs() {
+  for (const job of store.pendingJobs()) {
+    const key = job.jobId;
+    try {
+      const onchain = await mesh.getJob(BigInt(key));
+      const status = JOB_STATUS[onchain.status];
+      if (status !== "Funded") {
+        // Already delivered, refunded or cancelled elsewhere — stop retrying.
+        store.setJobStatus(key, `skipped:${status}`);
+        continue;
+      }
 
       log.info({ jobId: key, amount: formatUsd(onchain.amount) }, "job funded — working");
-      store.upsertJob({
-        jobId: key,
-        buyer: onchain.buyer,
-        amount: onchain.amount.toString(),
-        status: "working",
-      });
 
       // "Work": compose the report the buyer paid for.
       const report = JSON.stringify({
@@ -159,7 +276,7 @@ async function workEscrowJobs() {
         generatedAt: new Date().toISOString(),
       });
 
-      const tx = await mesh.deliverJob(jobId, report);
+      const tx = await mesh.deliverJob(BigInt(key), report);
       store.upsertJob({
         jobId: key,
         buyer: onchain.buyer,
@@ -169,7 +286,21 @@ async function workEscrowJobs() {
         status: "delivered",
       });
       log.info({ jobId: key, tx }, "job delivered");
+    } catch (err) {
+      // Stays pending: the next tick tries again.
+      log.error({ jobId: key, err: (err as Error).message }, "job delivery failed — will retry");
     }
+  }
+}
+
+async function workEscrowJobs() {
+  try {
+    await discoverEscrowJobs();
+  } catch (err) {
+    log.error({ err: (err as Error).message }, "escrow discovery error");
+  }
+  try {
+    await workPendingJobs();
   } catch (err) {
     log.error({ err: (err as Error).message }, "escrow worker error");
   }
