@@ -1,5 +1,12 @@
-import { JOB_STATUS, meshFromEnv, paidFetch } from "@agentmesh/sdk";
-import { assertAgentEndpoint, explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
+import {
+  fetchDeliverable,
+  JOB_STATUS,
+  meshFromEnv,
+  type PayeePolicy,
+  paidFetch,
+  SpendBudget,
+} from "@agentmesh/sdk";
+import { explorerTxUrl, formatUsd, usd } from "@agentmesh/shared";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { type Address, isAddress } from "viem";
@@ -16,6 +23,10 @@ import { z } from "zod";
 const { client: mesh, network } = meshFromEnv("BUYER_PRIVATE_KEY");
 const myAddress = await mesh.wallet.getAddress();
 
+/** Lifetime spend ceiling for this process. Deliberately out of reach of the
+ *  connected model: it is the only cap that survives prompt injection. */
+const budget = SpendBudget.fromEnv();
+
 const server = new McpServer({ name: "agentmesh", version: "0.1.0" });
 
 const json = (value: unknown) => ({
@@ -26,6 +37,8 @@ const json = (value: unknown) => ({
     },
   ],
 });
+
+const JOB_ID_RE = /^\d{1,18}$/;
 
 async function toSellerAddress(sellerNameOrAddress: string): Promise<Address> {
   if (isAddress(sellerNameOrAddress)) return sellerNameOrAddress;
@@ -76,10 +89,18 @@ server.tool(
 
 server.tool(
   "pay_x402",
-  "Fetch an x402-priced HTTP resource, automatically settling the required USDC micropayment on Arc (402 → pay → retry). maxAmountUsd caps spend per call.",
-  { url: z.string(), maxAmountUsd: z.string().default("0.01") },
-  async ({ url, maxAmountUsd }) => {
-    const { response, paid } = await paidFetch(mesh, url, { maxAmount: usd(maxAmountUsd) });
+  "Fetch an x402-priced HTTP resource, automatically settling the required USDC micropayment on Arc (402 → pay → retry). maxAmountUsd caps spend per call, but is itself clamped by the server's X402_MAX_PER_CALL_USD and X402_MAX_TOTAL_USD budget. Funds only ever go to a wallet registered in the AgentMesh registry; pass sellerName to pin the payee exactly.",
+  { url: z.string(), maxAmountUsd: z.string().default("0.01"), sellerName: z.string().optional() },
+  async ({ url, maxAmountUsd, sellerName }) => {
+    // maxAmountUsd is chosen by the model, and the fetched page is exactly the
+    // channel an attacker uses to influence that choice — so the process budget,
+    // which the model cannot see or set, is the binding limit.
+    const requested = usd(maxAmountUsd);
+    const maxAmount = requested < budget.perCall ? requested : budget.perCall;
+    const payeePolicy: PayeePolicy = sellerName
+      ? { expect: (await mesh.resolveAgent(sellerName)).wallet }
+      : { registeredAgent: true };
+    const { response, paid } = await paidFetch(mesh, url, { maxAmount, payeePolicy, budget });
     const body = await response.text();
     return json({
       status: response.status,
@@ -173,11 +194,14 @@ server.tool(
   "Fetch the deliverable for a completed escrow job from the seller agent's endpoint.",
   { sellerName: z.string(), jobId: z.string() },
   async ({ sellerName, jobId }) => {
+    // jobId reaches us as free text from the model; interpolating it into a URL
+    // is a path-traversal / query-injection hole.
+    if (!JOB_ID_RE.test(jobId)) throw new Error(`jobId must be a decimal string: ${jobId}`);
     const { card } = await mesh.resolveAgent(sellerName);
-    // Registry endpoints are attacker-registrable — never fetch internal targets.
-    assertAgentEndpoint(card.endpoint, { allowPrivate: network === "local" });
-    const res = await fetch(`${card.endpoint}/jobs/${jobId}/deliverable`);
-    return json(await res.json());
+    // fetchDeliverable signs as this wallet (the seller checks it against
+    // job.buyer on-chain) and routes through safeFetch, so a registry endpoint
+    // cannot redirect us somewhere internal.
+    return json(await fetchDeliverable(mesh, card.endpoint, jobId));
   },
 );
 
