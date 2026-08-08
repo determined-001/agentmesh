@@ -148,6 +148,37 @@ describe("verifyPaymentClaim", () => {
     expect(res).toMatchObject({ ok: false, error: "no matching USDC transfer in tx" });
   });
 
+  it("concurrent claims of one payment settle exactly once", async () => {
+    // Regression: the replay guard used to read `used_tx` and write it on either
+    // side of an await, so N concurrent claims of a single on-chain payment all
+    // passed the check and every one of them was served.
+    const N = 10;
+    for (let i = 0; i < N; i++) {
+      state.setQuote(`c${i}`, { resource: "/api/headline", price: PRICE, validUntil: Date.now() + 60_000 });
+    }
+    const interleaving = {
+      ...base,
+      state,
+      // Yields the event loop so all N claims are in flight simultaneously.
+      getReceipt: async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        return receiptWithTransfer(payer.address, PAY_TO, PRICE);
+      },
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: N }, async (_, i) =>
+        verifyPaymentClaim(await makePayload({ quoteId: `c${i}` }), "/api/headline", PRICE, interleaving),
+      ),
+    );
+
+    expect(results.filter((r) => r.ok && !r.idempotent)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toHaveLength(N - 1);
+    for (const r of results.filter((r) => !r.ok)) {
+      expect(r).toMatchObject({ error: "payment already used" });
+    }
+  });
+
   it("rejects underpayment and reverted txs", async () => {
     const under = await verifyPaymentClaim(
       await makePayload({ quoteId: "q1", amount: 1n }),

@@ -36,18 +36,24 @@ export interface Quote {
   validUntil: number;
 }
 
+/** Outcome of an atomic claim attempt. */
+export type ClaimResult = { ok: true; idempotent: boolean } | { ok: false; status: 402; error: string };
+
 /** Quote/claim bookkeeping, store-shaped so implementations can be in-memory
  *  (tests, dev) or durable (SQLite in the seller — replay protection must
- *  survive restarts). */
+ *  survive restarts).
+ *
+ *  `claim` is the authoritative gate and MUST be atomic: it re-validates the
+ *  quote and the tx-replay state and consumes both in one indivisible step.
+ *  Splitting that into separate read and write calls is what let concurrent
+ *  requests each spend the same payment. */
 export interface X402State {
   getQuote(id: string): Quote | undefined;
   setQuote(id: string, q: Quote): void;
-  deleteQuote(id: string): void;
   /** txHash that already claimed this quote, if any. */
   getConsumed(id: string): `0x${string}` | undefined;
-  setConsumed(id: string, txHash: `0x${string}`): void;
   hasUsedTx(txHash: string): boolean;
-  addUsedTx(txHash: string): void;
+  claim(quoteId: string, txHash: string, resource: string, now: number): ClaimResult;
   pruneQuotes(now: number): void;
 }
 
@@ -58,11 +64,27 @@ export function createX402State(): X402State {
   return {
     getQuote: (id) => quotes.get(id),
     setQuote: (id, q) => void quotes.set(id, q),
-    deleteQuote: (id) => void quotes.delete(id),
     getConsumed: (id) => consumed.get(id),
-    setConsumed: (id, tx) => void consumed.set(id, tx),
     hasUsedTx: (tx) => usedTxHashes.has(tx),
-    addUsedTx: (tx) => void usedTxHashes.add(tx),
+    // Synchronous start to finish, so it is atomic on a single-threaded loop:
+    // no await can interleave another claim between the checks and the writes.
+    claim: (quoteId, txHash, resource, now) => {
+      const claimedBy = consumed.get(quoteId);
+      if (claimedBy) {
+        if (claimedBy === txHash) return { ok: true, idempotent: true };
+        return { ok: false, status: 402, error: "quote already claimed" };
+      }
+      const quote = quotes.get(quoteId);
+      if (!quote) return { ok: false, status: 402, error: "unknown or expired quote" };
+      if (now > quote.validUntil) return { ok: false, status: 402, error: "quote expired" };
+      if (quote.resource !== resource)
+        return { ok: false, status: 402, error: "quote is for another resource" };
+      if (usedTxHashes.has(txHash)) return { ok: false, status: 402, error: "payment already used" };
+      usedTxHashes.add(txHash);
+      consumed.set(quoteId, txHash as `0x${string}`);
+      quotes.delete(quoteId);
+      return { ok: true, idempotent: false };
+    },
     pruneQuotes: (now) => {
       for (const [id, q] of quotes) {
         if (now > q.validUntil) quotes.delete(id);
@@ -105,14 +127,23 @@ export async function verifyPaymentClaim(
   // wallet (e.g. Circle SCA), signature format notwithstanding.
   let sigOk = false;
   try {
-    sigOk = await opts.verifySignature({ address: from, message: paymentSigMessage(quoteId, txHash), signature });
+    sigOk = await opts.verifySignature({
+      address: from,
+      message: paymentSigMessage(quoteId, txHash),
+      signature,
+    });
   } catch {
     sigOk = false;
   }
   if (!sigOk) return { ok: false, status: 402, error: "invalid payment signature" };
 
-  // Idempotent re-claim: same quote, same tx, valid signature → serve again
-  // without re-recording (client recovering from a lost response).
+  // Cheap non-authoritative pre-checks: reject obviously dead claims before
+  // spending an RPC round trip. Everything here is re-checked inside the
+  // atomic claim below, which is what actually decides the outcome.
+  //
+  // Idempotent re-claim (same quote, same tx, valid signature) short-circuits
+  // here so a client recovering from a lost response is served without
+  // re-verifying the receipt.
   const claimedBy = state.getConsumed(quoteId);
   if (claimedBy) {
     if (claimedBy === txHash.toLowerCase()) return { ok: true, idempotent: true };
@@ -145,10 +176,9 @@ export async function verifyPaymentClaim(
   );
   if (!match) return { ok: false, status: 402, error: "no matching USDC transfer in tx" };
 
-  state.addUsedTx(txHash.toLowerCase());
-  state.setConsumed(quoteId, txHash.toLowerCase() as `0x${string}`);
-  state.deleteQuote(quoteId);
-  return { ok: true, idempotent: false };
+  // Authoritative gate. Concurrent claims of the same payment all reach this
+  // line; the atomic claim lets exactly one of them through.
+  return state.claim(quoteId, txHash.toLowerCase(), resource, Date.now());
 }
 
 type GetReceipt = (hash: `0x${string}`) => Promise<{
@@ -156,7 +186,11 @@ type GetReceipt = (hash: `0x${string}`) => Promise<{
   logs: Parameters<typeof parseEventLogs>[0]["logs"];
 }>;
 
-type VerifySignature = (params: { address: Address; message: string; signature: `0x${string}` }) => Promise<boolean>;
+type VerifySignature = (params: {
+  address: Address;
+  message: string;
+  signature: `0x${string}`;
+}) => Promise<boolean>;
 
 /** Hono middleware implementing the x402 handshake with on-chain USDC settlement
  *  verification (agentmesh-direct scheme). `price` is USDC base units (6 dp). */
