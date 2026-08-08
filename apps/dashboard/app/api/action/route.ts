@@ -1,19 +1,29 @@
 import { timingSafeEqual } from "node:crypto";
 import { meshFromEnv } from "@agentmesh/sdk";
+import { createLogger } from "@agentmesh/shared/logger";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+const log = createLogger("dashboard");
 
 const ACTIONS = new Set(["release", "dispute"]);
 const JOB_ID_RE = /^\d{1,18}$/;
 
 /** Bearer-token gate. This route signs with DASHBOARD_PRIVATE_KEY (the buyer's
  *  key in the demo), so it must never be an open endpoint: any page a user
- *  visits could otherwise POST release/dispute. Token is required except on the
- *  local demo network with no token configured. */
+ *  visits could otherwise POST release/dispute, and Next binds 0.0.0.0 so the
+ *  reach is the whole LAN, not just loopback.
+ *
+ *  Fails closed. An unset AGENTMESH_NETWORK is *unknown*, not "local" — the
+ *  previous `?? "local"` default meant a deployment that simply forgot to set
+ *  the variable served an unauthenticated signing endpoint. Local development
+ *  without a token must now opt in explicitly. */
 function authorized(req: Request): boolean {
   const token = process.env.DASHBOARD_ACTION_TOKEN ?? "";
-  if (!token) return (process.env.AGENTMESH_NETWORK ?? "local") === "local";
+  if (!token) {
+    return process.env.AGENTMESH_NETWORK === "local" && process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
+  }
   const header = req.headers.get("authorization") ?? "";
   const presented = header.startsWith("Bearer ") ? header.slice(7) : "";
   const a = Buffer.from(presented);
@@ -52,6 +62,9 @@ export async function POST(req: Request) {
         : await client.disputeJob(BigInt(jobId));
     return NextResponse.json({ ok: true, action, jobId, txHash });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    // Never echo the raw chain error: it carries the contract address, the
+    // function signature, the *signer address* and the viem version.
+    log.error({ action, jobId, err: (err as Error).message }, "action failed");
+    return NextResponse.json({ error: "action failed" }, { status: 500 });
   }
 }

@@ -17,10 +17,38 @@ const SELLER_URL = process.env.SELLER_URL ?? "http://localhost:4021";
 
 const big = (_: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
+/** Every call fans out to ~10 contract reads, and the page polls every 2s per
+ *  open tab — without a shared cache, N viewers multiply straight into N×
+ *  RPC load on an endpoint we don't own. */
+const CACHE_MS = Number(process.env.STATE_CACHE_MS ?? 2000);
+let cache: { at: number; body: unknown } | undefined;
+let inflight: Promise<unknown> | undefined;
+
 export async function GET() {
+  if (cache && Date.now() - cache.at < CACHE_MS) return NextResponse.json(cache.body);
+  // Collapse concurrent misses into one upstream fan-out.
+  if (!inflight) {
+    inflight = buildState().finally(() => {
+      inflight = undefined;
+    });
+  }
   try {
+    const body = await inflight;
+    cache = { at: Date.now(), body };
+    return NextResponse.json(body);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message, network }, { status: 500 });
+  }
+}
+
+async function buildState() {
+  {
     const deployment = readDeployment(network);
-    const client = createPublicClient({ chain: chainFor(network), transport: http() });
+    // Explicit timeout/retry: a hanging RPC otherwise pins the route open.
+    const client = createPublicClient({
+      chain: chainFor(network),
+      transport: http(undefined, { retryCount: 2, retryDelay: 300, timeout: 10_000 }),
+    });
 
     const agentsRaw = (await client.readContract({
       address: deployment.agentRegistry,
@@ -76,17 +104,18 @@ export async function GET() {
 
     let payments: unknown = { count: 0, payments: [] };
     try {
-      const res = await fetch(`${SELLER_URL}/payments`, { signal: AbortSignal.timeout(1500) });
+      // /payments is operator-only now; the token stays server-side and never
+      // reaches the browser.
+      const adminToken = process.env.SELLER_ADMIN_TOKEN;
+      const res = await fetch(`${SELLER_URL}/payments`, {
+        signal: AbortSignal.timeout(1500),
+        headers: adminToken ? { authorization: `Bearer ${adminToken}` } : {},
+      });
       if (res.ok) payments = await res.json();
     } catch {
       // seller agent offline — dashboard still renders chain state
     }
 
-    const body = JSON.parse(
-      JSON.stringify({ network, deployment, agents, jobs, payments, ts: Date.now() }, big),
-    );
-    return NextResponse.json(body);
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message, network }, { status: 500 });
+    return JSON.parse(JSON.stringify({ network, deployment, agents, jobs, payments, ts: Date.now() }, big));
   }
 }
