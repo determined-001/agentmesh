@@ -34,6 +34,14 @@ const json = (value: unknown) => ({
 const JOB_ID_RE = /^\d{1,18}$/;
 const WALLET_ID_RE = /^[0-9a-f-]{16,64}$/i;
 
+/** Chain timestamps are unix seconds. Handed to a model as a bare integer they get
+ *  misread — a reviewer was told a registration four days old happened next month —
+ *  so every timestamp leaves here already resolved. */
+const iso = (unixSeconds: bigint | number): string | undefined => {
+  const n = Number(unixSeconds);
+  return n > 0 ? new Date(n * 1000).toISOString() : undefined;
+};
+
 async function toAddress(nameOrAddress: string): Promise<Address> {
   if (isAddress(nameOrAddress)) return nameOrAddress;
   const { wallet } = await readOnlyMesh().resolveAgent(nameOrAddress);
@@ -76,7 +84,13 @@ const handler = createMcpHandler(
       {},
       async () => {
         const agents = await readOnlyMesh().listAgents();
-        return json(agents.map((a) => ({ ...a, displayName: `${a.name}.agent.arc` })));
+        return json(
+          agents.map((a) => ({
+            ...a,
+            displayName: `${a.name}.agent.arc`,
+            registeredAtIso: iso(a.registeredAt),
+          })),
+        );
       },
     );
 
@@ -86,7 +100,11 @@ const handler = createMcpHandler(
       { name: z.string() },
       async ({ name }) => {
         const { wallet, card } = await readOnlyMesh().resolveAgent(name);
-        return json({ name: `${name}.agent.arc`, wallet, card });
+        return json({
+          name: `${name}.agent.arc`,
+          wallet,
+          card: { ...card, registeredAtIso: iso(card.registeredAt) },
+        });
       },
     );
 
@@ -113,6 +131,9 @@ const handler = createMcpHandler(
           ...job,
           amountFormatted: formatUsd(job.amount),
           statusName: JOB_STATUS[job.status],
+          deadlineIso: iso(job.deadline),
+          deliveredAtIso: iso(job.deliveredAt),
+          nowIso: new Date().toISOString(),
         });
       },
     );
