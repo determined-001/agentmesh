@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import type { Address } from "viem";
-import type { PaymentRecord, Quote, X402State } from "./x402Middleware.js";
+import type { ClaimResult, PaymentRecord, Quote, X402State } from "./x402Middleware.js";
 
 export interface JobRecord {
   jobId: string;
@@ -45,16 +45,18 @@ export class SellerStore implements X402State {
         jobId TEXT PRIMARY KEY, buyer TEXT NOT NULL, amount TEXT NOT NULL,
         report TEXT, deliveredTx TEXT, status TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS used_nonces (nonce TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL);
     `);
     const stored = this.getMeta("scope");
     if (stored !== scope.toLowerCase()) {
       // Unconditional wipe on mismatch — a missing scope marker with existing
       // rows (legacy DB) must not let stale jobs shadow new ones.
       this.db.exec(
-        "DELETE FROM quotes; DELETE FROM consumed; DELETE FROM used_tx; DELETE FROM payments; DELETE FROM jobs; DELETE FROM meta;",
+        "DELETE FROM quotes; DELETE FROM consumed; DELETE FROM used_tx; DELETE FROM payments; DELETE FROM jobs; DELETE FROM used_nonces; DELETE FROM meta;",
       );
       this.setMeta("scope", scope.toLowerCase());
     }
+    this.buildClaimTxn();
   }
 
   private getMeta(k: string): string | undefined {
@@ -81,10 +83,6 @@ export class SellerStore implements X402State {
       .run(id, q.resource, q.price.toString(), q.validUntil);
   }
 
-  deleteQuote(id: string): void {
-    this.db.prepare("DELETE FROM quotes WHERE quoteId = ?").run(id);
-  }
-
   getConsumed(id: string): `0x${string}` | undefined {
     const row = this.db.prepare("SELECT txHash FROM consumed WHERE quoteId = ?").get(id) as
       | { txHash: `0x${string}` }
@@ -92,20 +90,68 @@ export class SellerStore implements X402State {
     return row?.txHash;
   }
 
-  setConsumed(id: string, txHash: `0x${string}`): void {
-    this.db.prepare("INSERT OR REPLACE INTO consumed (quoteId, txHash) VALUES (?, ?)").run(id, txHash);
-  }
-
   hasUsedTx(txHash: string): boolean {
     return this.db.prepare("SELECT 1 FROM used_tx WHERE txHash = ?").get(txHash) !== undefined;
   }
 
-  addUsedTx(txHash: string): void {
-    this.db.prepare("INSERT OR IGNORE INTO used_tx (txHash) VALUES (?)").run(txHash);
+  /** Atomic claim: validate the quote and the replay state, then consume both,
+   *  in one IMMEDIATE transaction. This is the only place that marks a payment
+   *  spent — a plain INSERT (never `OR IGNORE`) makes the used_tx primary key
+   *  the last line of defence, so a lost race rolls the whole claim back
+   *  instead of silently serving a second response for one payment. */
+  claim(quoteId: string, txHash: string, resource: string, now: number): ClaimResult {
+    return this.claimTxn(quoteId, txHash, resource, now);
+  }
+
+  /** Built in the constructor, not as a field initializer: field initializers
+   *  run before the constructor body, where `this.db` is assigned. */
+  private claimTxn!: (quoteId: string, txHash: string, resource: string, now: number) => ClaimResult;
+
+  private buildClaimTxn(): void {
+    this.claimTxn = this.db.transaction(
+      (quoteId: string, txHash: string, resource: string, now: number): ClaimResult => {
+        const claimedBy = this.getConsumed(quoteId);
+        if (claimedBy) {
+          if (claimedBy === txHash) return { ok: true, idempotent: true };
+          return { ok: false, status: 402, error: "quote already claimed" };
+        }
+        const quote = this.getQuote(quoteId);
+        if (!quote) return { ok: false, status: 402, error: "unknown or expired quote" };
+        if (now > quote.validUntil) return { ok: false, status: 402, error: "quote expired" };
+        if (quote.resource !== resource) {
+          return { ok: false, status: 402, error: "quote is for another resource" };
+        }
+        try {
+          this.db.prepare("INSERT INTO used_tx (txHash) VALUES (?)").run(txHash);
+        } catch {
+          // Primary-key violation: another claim already spent this payment.
+          // The failed statement is rolled back on its own; the transaction
+          // commits having changed nothing.
+          return { ok: false, status: 402, error: "payment already used" };
+        }
+        this.db.prepare("INSERT INTO consumed (quoteId, txHash) VALUES (?, ?)").run(quoteId, txHash);
+        this.db.prepare("DELETE FROM quotes WHERE quoteId = ?").run(quoteId);
+        return { ok: true, idempotent: false };
+      },
+    ).immediate;
   }
 
   pruneQuotes(now: number): void {
     this.db.prepare("DELETE FROM quotes WHERE validUntil < ?").run(now);
+  }
+
+  // ---- deliverable auth nonces ----
+  /** Burn a nonce. Returns false if it was already used, so a captured
+   *  authorisation header cannot be replayed within its validity window.
+   *  The insert itself is the check — no read-then-write race. */
+  useNonce(nonce: string, expiresAt: number): boolean {
+    this.db.prepare("DELETE FROM used_nonces WHERE expiresAt < ?").run(Date.now());
+    try {
+      this.db.prepare("INSERT INTO used_nonces (nonce, expiresAt) VALUES (?, ?)").run(nonce, expiresAt);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ---- payments ----
@@ -150,6 +196,19 @@ export class SellerStore implements X402State {
 
   listJobs(): JobRecord[] {
     return this.db.prepare("SELECT * FROM jobs ORDER BY CAST(jobId AS INTEGER)").all() as JobRecord[];
+  }
+
+  /** Jobs discovered from the chain but not yet worked. The block cursor may
+   *  only advance past blocks whose jobs are recorded here, so a crash or a
+   *  failed delivery leaves work queued rather than silently skipped. */
+  pendingJobs(): JobRecord[] {
+    return this.db
+      .prepare("SELECT * FROM jobs WHERE status = 'pending' ORDER BY CAST(jobId AS INTEGER)")
+      .all() as JobRecord[];
+  }
+
+  setJobStatus(jobId: string, status: string): void {
+    this.db.prepare("UPDATE jobs SET status = ? WHERE jobId = ?").run(status, jobId);
   }
 
   // ---- block cursor ----
