@@ -18,6 +18,11 @@ export const agentEscrowAbi = [
         "internalType": "uint64"
       },
       {
+        "name": "resolveTimeout_",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
         "name": "arbiter",
         "type": "address",
         "internalType": "address"
@@ -253,6 +258,25 @@ export const agentEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "owed",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -325,6 +349,19 @@ export const agentEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "refundUnresolved",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "release",
     "inputs": [
       {
@@ -360,6 +397,19 @@ export const agentEscrowAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "resolveTimeout",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -406,6 +456,13 @@ export const agentEscrowAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "withdraw",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "event",
@@ -553,6 +610,19 @@ export const agentEscrowAbi = [
   },
   {
     "type": "event",
+    "name": "JobRefundedTimeout",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "JobReleased",
     "inputs": [
       {
@@ -648,6 +718,31 @@ export const agentEscrowAbi = [
   },
   {
     "type": "event",
+    "name": "PayoutDeferred",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Unpaused",
     "inputs": [
       {
@@ -655,6 +750,25 @@ export const agentEscrowAbi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Withdrawn",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -707,12 +821,27 @@ export const agentEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidTimeout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAContract",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotBuyer",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NotSeller",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingOwed",
     "inputs": []
   },
   {
@@ -744,6 +873,11 @@ export const agentEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "ResolveTimeoutNotPassed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SafeERC20FailedOperation",
     "inputs": [
       {
@@ -752,6 +886,11 @@ export const agentEscrowAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "SelfDealing",
+    "inputs": []
   },
   {
     "type": "error",
