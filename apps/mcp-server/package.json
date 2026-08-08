@@ -15,7 +15,7 @@
   "dependencies": {
     "@agentmesh/sdk": "workspace:*",
     "@agentmesh/shared": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "viem": "^2.21.0",
     "zod": "^3.23.0"
   },
