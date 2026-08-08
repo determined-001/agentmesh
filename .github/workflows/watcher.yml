@@ -43,7 +43,23 @@ jobs:
           key: watcher-state-${{ github.run_id }}
           restore-keys: watcher-state-
 
+      # Until a watcher wallet is configured this workflow would fail every five
+      # minutes and paint the repo red for anyone reading it. Skip instead.
+      - name: Check for a watcher wallet
+        id: guard
+        env:
+          WATCHER_PRIVATE_KEY: ${{ secrets.WATCHER_PRIVATE_KEY }}
+          CIRCLE_WATCHER_WALLET_ID: ${{ secrets.CIRCLE_WATCHER_WALLET_ID }}
+        run: |
+          if [ -z "$WATCHER_PRIVATE_KEY" ] && [ -z "$CIRCLE_WATCHER_WALLET_ID" ]; then
+            echo "No watcher wallet configured — set WATCHER_PRIVATE_KEY (or the CIRCLE_WATCHER_* secrets). Skipping."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run watcher
+        if: steps.guard.outputs.configured == 'true'
         env:
           AGENTMESH_NETWORK: ${{ vars.AGENTMESH_NETWORK || 'arc-testnet' }}
           WATCHER_RUN_FOR_MS: "270000"
