@@ -101,9 +101,28 @@ contract EscrowHandler is Test {
         if (job.status != AgentEscrow.JobStatus.Delivered && job.status != AgentEscrow.JobStatus.Disputed) {
             return;
         }
-        if (gate.isAllowed(job.seller)) return;
+        // Affirmative deny only — an unscreened or stale seller is not blocked.
+        if (!gate.isBlocked(job.seller)) return;
         escrow.refundBlocked(jobId);
         ghost_refunded += job.amount;
+    }
+
+    function refundUnresolved(uint256 seed) external {
+        (uint256 jobId, AgentEscrow.Job memory job) = _job(seed);
+        if (jobId == 0) return;
+        if (job.status != AgentEscrow.JobStatus.Delivered && job.status != AgentEscrow.JobStatus.Disputed) {
+            return;
+        }
+        if (block.timestamp <= uint256(job.deliveredAt) + escrow.resolveTimeout()) return;
+        escrow.refundUnresolved(jobId);
+        ghost_refunded += job.amount;
+    }
+
+    function withdraw(uint256 seed) external {
+        address who = seed % 2 == 0 ? buyers[seed % buyers.length] : sellers[seed % sellers.length];
+        if (escrow.owed(who) == 0) return;
+        vm.prank(who);
+        escrow.withdraw();
     }
 
     function screen(uint256 sellerSeed, bool allowed) external {
@@ -125,21 +144,25 @@ contract EscrowInvariantTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        gate = new ComplianceGate(arbiter);
-        escrow = new AgentEscrow(IERC20(address(usdc)), IComplianceGate(address(gate)), 1 hours, arbiter);
+        gate = new ComplianceGate(2 days, arbiter, arbiter);
+        escrow = new AgentEscrow(IERC20(address(usdc)), IComplianceGate(address(gate)), 1 hours, 7 days, arbiter);
         handler = new EscrowHandler(usdc, gate, escrow, arbiter);
 
         vm.startPrank(arbiter);
         gate.setAllowed(address(0x51), true, keccak256("clean"));
         gate.setAllowed(address(0x52), true, keccak256("clean"));
-        // 0x53 starts blocked
+        // 0x53 starts affirmatively denied — an explicit verdict, not merely
+        // the absence of one, which is what refundBlocked now requires.
+        gate.setAllowed(address(0x53), false, keccak256("sanctioned"));
         vm.stopPrank();
 
         targetContract(address(handler));
     }
 
-    /// Escrow can never hold less than the sum of open jobs, and never leaks:
-    /// balance == Σ amounts of Funded/Delivered/Disputed jobs, exactly.
+    /// Escrow can never hold less than it owes, and never leaks:
+    /// balance == Σ open job amounts + Σ deferred payouts, exactly.
+    /// The `owed` term covers payouts that could not be pushed (a blacklisted
+    /// recipient); that money stays in the contract earmarked for {withdraw}.
     function invariant_BalanceMatchesOpenJobs() public view {
         uint256 open;
         uint256 n = escrow.nextJobId();
@@ -150,7 +173,11 @@ contract EscrowInvariantTest is Test {
                     || job.status == AgentEscrow.JobStatus.Disputed
             ) open += job.amount;
         }
-        assertEq(usdc.balanceOf(address(escrow)), open, "escrow balance != open job sum");
+        uint256 deferred;
+        for (uint256 i = 0; i < 3; i++) {
+            deferred += escrow.owed(handler.buyers(i)) + escrow.owed(handler.sellers(i));
+        }
+        assertEq(usdc.balanceOf(address(escrow)), open + deferred, "escrow balance != open jobs + deferred");
     }
 
     /// Terminal jobs are terminal: total paid out equals ghost accounting,
